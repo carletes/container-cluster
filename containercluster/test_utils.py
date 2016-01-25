@@ -16,9 +16,9 @@ def test_errors_in_parallel():
         return {}[k]
 
     with raises(utils.MultipleError) as err:
-        utils.parallel((utils.run, "echo foo"),
-                       (key_error, "no-such-key"),
-                       (divide_by_zero, 42),
-                       (utils.run, "echo bar"))
+        utils.parallel(((utils.run, "echo foo"),
+                        (key_error, "no-such-key"),
+                        (divide_by_zero, 42),
+                        (utils.run, "echo bar")))
     errors = set(exc.message for exc in err.value)
     assert errors == set(("no-such-key", "integer division or modulo by zero"))

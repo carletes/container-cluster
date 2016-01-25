@@ -34,7 +34,7 @@ class MultipleError(Exception):
         return "\n".join(err.message for err in self.args)
 
 
-def parallel(*tasks):
+def parallel(tasks):
     results = []
     errors = []
 

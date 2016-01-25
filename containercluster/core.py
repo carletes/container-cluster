@@ -197,18 +197,18 @@ class Cluster(object):
             self.log.info("Creating nodes for cluster '%s'", self.name)
             cluster_data = self.config.clusters[self.name]
             nodes_data = cluster_data["nodes"]
-            self._nodes = utils.parallel(*[(self.provider.ensure_node,
-                                            n["name"],
-                                            n["type"],
-                                            n["size"],
-                                            cluster_data,
-                                            self.config.ssh_key_pair)
-                                           for n in nodes_data])
+            self._nodes = utils.parallel((self.provider.ensure_node,
+                                          n["name"],
+                                          n["type"],
+                                          n["size"],
+                                          cluster_data,
+                                          self.config.ssh_key_pair)
+                                         for n in nodes_data)
         return self._nodes
 
     def destroy_nodes(self):
-        utils.parallel(*[(self.provider.destroy_node, n.driver_obj)
-                         for n in self.nodes])
+        utils.parallel((self.provider.destroy_node, n.driver_obj)
+                       for n in self.nodes)
 
     def start_nodes(self):
         self.log.info("Starting nodes for cluster '%s'", self.name)
@@ -238,7 +238,7 @@ class Cluster(object):
             self.log.info("Rebooting node '%s'", node.name)
             self.provider.reboot_node(node.driver_obj)
 
-        utils.parallel(*[(restart_if_needed, node) for node in self.nodes])
+        utils.parallel((restart_if_needed, node) for node in self.nodes)
         self.log.info("%s: Waiting for nodes ...", self.name)
         nodes = self.provider.driver.wait_until_running(n.driver_obj
                                                         for n in self.nodes)
