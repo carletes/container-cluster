@@ -32,6 +32,49 @@ def default_provider():
     return PROVIDERS["digitalocean"]
 
 
+class Node(object):
+
+    node_type = None
+
+    def __init__(self, name):
+        self.name = name
+        self.driver_obj = None
+
+    def destroy(self):
+        return self.driver_obj.destroy()
+
+    def reboot(self):
+        return self.driver_obj.reboot()
+
+    @property
+    def state(self):
+        return self.driver_obj.state
+
+    @property
+    def cloud_config_template(self):
+        fname = os.path.join(os.path.dirname(__file__),
+                             "%s-cloud-config.yaml" % (self.node_type,))
+        if not os.access(fname, os.F_OK):
+            raise Exception("No cloud-config template for node type '%s'" %
+                            (self.node_type,))
+
+        with open(fname, "rt") as f:
+            return f.read()
+
+
+class EtcdNode(Node):
+
+    node_type = "etcd"
+
+
+class WorkerNode(Node):
+
+    node_type = "worker"
+
+
+NODE_TYPES = dict((cls.node_type, cls) for cls in (EtcdNode, WorkerNode))
+
+
 class Provider(object):
 
     create_key_pair_lock = threading.Lock()
@@ -43,14 +86,18 @@ class Provider(object):
         self.images = {}
         self.locations = {}
 
-    def ensure_node(self, name, size, channel, location, ssh_key_pair,
-                    cloud_config_data):
-        self.log.info("Creating node %s (%s, %s, %s, %s)", name, size, channel,
-                      location, cloud_config_data)
+    def ensure_node(self, name, node_type, size, cluster, ssh_key_pair):
+        channel = cluster["channel"]
+        location = cluster["location"]
+        self.log.info("Creating node %s (%s, %s, %s, %s)", name, node_type,
+                      size, channel, location)
+        node = NODE_TYPES[node_type](name)
+
         for n in self.driver.list_nodes():
             if n.name == name:
                 self.log.info("Node '%s' already created", name)
-                return n
+                node.driver_obj = n
+                return node
 
         channels = {"stable", "beta", "alpha"}
         if channel not in channels:
@@ -59,8 +106,15 @@ class Provider(object):
                              (channel, sorted(channels)))
 
         public_ssh_key = self.get_public_ssh_key(ssh_key_pair)
-        return self.create_node(name, size, channel, location,
-                                public_ssh_key.fingerprint, cloud_config_data)
+        try:
+            cloud_config_data = node.cloud_config_template % cluster
+        except:
+            cloud_config_data = None
+        n = self.create_node(name, size, channel, location,
+                             public_ssh_key.fingerprint,
+                             cloud_config_data)
+        node.driver_obj = n
+        return node
 
     def destroy_node(self, node):
         self.log.info("Destroying node '%s'", node.name)
@@ -145,16 +199,16 @@ class Cluster(object):
             nodes_data = cluster_data["nodes"]
             self._nodes = utils.parallel(*[(self.provider.ensure_node,
                                             n["name"],
+                                            n["type"],
                                             n["size"],
-                                            cluster_data["channel"],
-                                            cluster_data["location"],
-                                            self.config.ssh_key_pair,
-                                            self.cloud_config_data(n["type"]))
+                                            cluster_data,
+                                            self.config.ssh_key_pair)
                                            for n in nodes_data])
         return self._nodes
 
     def destroy_nodes(self):
-        utils.parallel(*[(self.provider.destroy_node, n) for n in self.nodes])
+        utils.parallel(*[(self.provider.destroy_node, n.driver_obj)
+                         for n in self.nodes])
 
     def start_nodes(self):
         self.log.info("Starting nodes for cluster '%s'", self.name)
@@ -182,26 +236,13 @@ class Cluster(object):
                 raise Exception("Node '%s' cannot be restarted" % (node.name,))
 
             self.log.info("Rebooting node '%s'", node.name)
-            self.provider.reboot_node(node)
+            self.provider.reboot_node(node.driver_obj)
 
         utils.parallel(*[(restart_if_needed, node) for node in self.nodes])
         self.log.info("%s: Waiting for nodes ...", self.name)
-        nodes = self.provider.driver.wait_until_running(self.nodes)
+        nodes = self.provider.driver.wait_until_running(n.driver_obj
+                                                        for n in self.nodes)
         self.log.debug("start_nodes(): Nodes up: %s", nodes)
-
-    def cloud_config_data(self, node_type):
-        fname = os.path.join(os.path.dirname(__file__),
-                             "%s-cloud-config.yaml" % (node_type,))
-        if not os.access(fname, os.F_OK):
-            self.log.debug("No cloud-config template for node type '%s'",
-                           node_type)
-            return None
-        with open(fname, "rt") as f:
-            template = f.read()
-        t = self.config.clusters[self.name]["discovery_token"]
-        return template % {
-            "discovery_token": t,
-        }
 
 
 LOG = logging.getLogger(__name__)
