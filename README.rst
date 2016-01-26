@@ -6,3 +6,5 @@ clusters for learning and development purposes.
 
 
 .. _Kubernetes: http://kubernetes.io/
+.. image:: https://travis-ci.org/carletes/container-cluster.svg?branch=master
+	   :target: https://travis-ci.org/carletes/container-cluster
