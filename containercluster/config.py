@@ -237,7 +237,7 @@ class SSHKeyPair(object):
         with self.ssh_keygen_lock:
             if not os.access(fname, os.R_OK):
                 self.log.info("Generating SSH key pair %s", fname)
-                utils.run("ssh-keygen -f %s < /dev/null" % (fname,))
+                utils.run("ssh-keygen -f %s -N ''" % (fname,))
         return fname
 
 
