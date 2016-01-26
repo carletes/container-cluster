@@ -203,7 +203,7 @@ class Config(object):
                     except:
                         pass
                     raise
-            os.chmod(fname, 0755)
+            os.chmod(fname, 0o755)
         return fname
 
 

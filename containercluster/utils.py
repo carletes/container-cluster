@@ -29,9 +29,11 @@ class MultipleError(Exception):
     def __init__(self, *args):
         super(MultipleError, self).__init__(*args)
 
-    @property
-    def message(self):
-        return "\n".join(err.message for err in self.args)
+    def __str__(self):
+        return "\n".join(str(err) for err in self.args)
+
+    def __iter__(self):
+        return iter(self.args)
 
 
 def parallel(tasks):
