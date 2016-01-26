@@ -1,10 +1,7 @@
 language: python
 
-# Run `tox` under Python 3.5, and let `tox` run the tests for Python 2.7 and
-# other supported implementations (so that we don't repeat the list of
-# supported Python versions here, too).
-
 python:
+  - 2.7
   - 3.5
 
 install:
