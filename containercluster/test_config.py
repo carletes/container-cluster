@@ -7,11 +7,6 @@ def test_config_dir_exists(config):
     assert os.path.isdir(config.config_dir)
 
 
-def test_cfssl_progs_exist(config):
-    assert os.access(config.cfssl_path, os.X_OK)
-    assert os.access(config.cfssljson_path, os.X_OK)
-
-
 def test_ca_cert_file_exists(config):
     assert os.access(config.ca_cert_path, os.F_OK)
 

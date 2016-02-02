@@ -1,16 +1,13 @@
 import logging
-import json
 import os
 import platform
 import pwd
 import threading
 
-from contextlib import closing
-
 import requests
 import yaml
 
-from containercluster import utils
+from containercluster import ca, utils
 
 
 __all__ = [
@@ -99,81 +96,7 @@ class Config(object):
 
     @property
     def ca_cert_path(self):
-        fname = os.path.join(self.ca_dir, "ca-cert.pem")
-        if not os.access(fname, os.F_OK):
-            self.log.info("Creating CoreOS CA cert and key")
-            try:
-                utils.run("%(cfssl)s gencert -initca %(csr)s | "
-                          "%(cfssljson)s -bare ca-cert -" % {
-                              "cfssl": self.cfssl_path,
-                              "csr": self.ca_csr_path,
-                              "cfssljson": self.cfssljson_path,
-                          },
-                          shell=True, cwd=self.ca_dir)
-            except:
-                try:
-                    os.unlink(fname)
-                except:
-                    pass
-                raise
-        return fname
-
-    @property
-    def ca_csr_path(self):
-        fname = os.path.join(self.ca_dir, "ca-csr.pem")
-        if not os.access(fname, os.F_OK):
-            self.log.info("Creating CoreOS CA CSR file %s", fname)
-            with open(fname, "wt") as f:
-                json.dump({
-                    "CN": "CoreOS cluster demo CA",
-                    "hosts": [
-                        "localhost",
-                    ],
-                    "key": {
-                        "algo": "rsa",
-                        "size": 2048
-                    },
-                    "names": [
-                        {
-                            "O": "CoreOS cluster demo",
-                        }
-                    ]
-                }, f, indent=2)
-        return fname
-
-    @property
-    def ca_config_path(self):
-        fname = os.path.join(self.ca_dir, "ca-config.json")
-        if not os.access(fname, os.F_OK):
-            self.log.info("Creating CoreOS CA config file %s", fname)
-            with open(fname, "wt") as f:
-                json.dump({
-                    "signing": {
-                        "default": {
-                            "expiry": "43800h"
-                        },
-                        "profiles": {
-                            "client-server": {
-                                "expiry": "43800h",
-                                "usages": [
-                                    "signing",
-                                    "key encipherment",
-                                    "server auth",
-                                    "client auth"
-                                ]
-                            }
-                        }
-                    }
-                }, f, indent=2)
-        return fname
-
-    @property
-    def cfssl_path(self):
-        return self._ensure_cfssl_bin("cfssl")
-
-    @property
-    def cfssljson_path(self):
-        return self._ensure_cfssl_bin("cfssljson")
+        return ca.CA(self.ca_dir).cert_path
 
     @property
     def ssh_key_pair(self):
@@ -184,27 +107,6 @@ class Config(object):
             self.log.info("Creating directory %s", dname)
             os.makedirs(dname)
         return dname
-
-    def _ensure_cfssl_bin(self, prog):
-        fname = os.path.join(self.bin_dir, prog)
-        if not os.access(fname, os.F_OK):
-            url = ("https://pkg.cfssl.org/R1.1/%s_%s-amd64" %
-                   (prog, platform.system().lower()))
-            self.log.info("Downloading %s to %s", url, fname)
-            with closing(requests.get(url, stream=True)) as res:
-                res.raise_for_status()
-                try:
-                    with open(fname, "wb") as f:
-                        for chunk in res.iter_content(64 * 1024):
-                            f.write(chunk)
-                except:
-                    try:
-                        os.unlink(fname)
-                    except:
-                        pass
-                    raise
-            os.chmod(fname, 0o755)
-        return fname
 
 
 class SSHKeyPair(object):
