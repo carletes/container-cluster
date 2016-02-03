@@ -36,6 +36,11 @@ class Node(object):
     def provision(self):
         self.log.info("Provisioning node %s", self.name)
         self.provider.wait_until_running(self)
+
+        ssh_host = self.public_ips[0]
+        self.log.debug("Waiting for SSH on %s:%d", ssh_host, self.ssh_port)
+        utils.wait_for_port_open(ssh_host, self.ssh_port, timeout=60.0)
+
         with self.ssh_session as s:
             s.exec_command("mkdir -p %s" % (self.certs_dir,))
             sftp = s.open_sftp()
