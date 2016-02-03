@@ -8,21 +8,11 @@ import mockssh
 
 import pytest
 
-from containercluster import core, config
+from containercluster import core
 
 
 HOSTNAME = platform.node()
 UID = pwd.getpwuid(os.geteuid()).pw_name
-
-
-@pytest.yield_fixture
-def mock_cluster(scope="function"):
-    home = tempfile.mkdtemp(prefix="container-cluster-test-")
-    conf = config.Config(home)
-    cluster = core.create_cluster("test-cluster1", "alpha", 3, "512mb", 4,
-                                  "1gb", "mockprovider", "lon1", conf)
-    with cluster.provider.ssh_server:
-        yield cluster
 
 
 def test_cloud_config_template(mock_cluster):

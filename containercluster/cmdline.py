@@ -2,14 +2,11 @@ import argparse
 import logging
 import sys
 
-
 from containercluster import config, core
 
-from containercluster import providers
-
-# Keep pyflakes happy
-
-_ = providers
+from containercluster.providers import (
+    default_provider, get_provider, provider_names
+)
 
 
 __all__ = [
@@ -40,20 +37,20 @@ def main():
                           default=3)
     create_p.add_argument("--size-etcd", metavar="SIZE",
                           help="size for etc nodes (default: %(default)s)",
-                          default=core.default_provider().default_etcd_size)
+                          default=default_provider().default_etcd_size)
     create_p.add_argument("--num-workers", metavar="NUM", type=int,
                           help="number of worker nodes (default: %(default)s)",
                           default=2)
     create_p.add_argument("--size-workers", metavar="SIZE",
                           help="size for worker nodes (default: %(default)s)",
-                          default=core.default_provider().default_worker_size)
+                          default=default_provider().default_worker_size)
     create_p.add_argument("--location", metavar="LOCATION",
                           help="instance location (default: %(default)s)",
-                          default=core.default_provider().default_location)
+                          default=default_provider().default_location)
     create_p.add_argument("--provider", metavar="PROVIDER",
                           help="cloud provider (default: %(default)s)",
-                          choices=core.provider_names(),
-                          default=core.default_provider().name)
+                          choices=provider_names(),
+                          default=default_provider().name)
     create_p.set_defaults(func=create_cluster)
 
     provision_p = subp.add_parser("provision",
@@ -109,9 +106,9 @@ def create_cluster(args):
     if args.name in conf.clusters:
         LOG.error("Cluster `%s` already exists", args.name)
         return 1
-
+    provider = get_provider(args.provider)
     core.create_cluster(args.name, args.channel, args.num_etcd, args.size_etcd,
-                        args.num_workers, args.size_workers, args.provider,
+                        args.num_workers, args.size_workers, provider,
                         args.location, conf)
     return cluster_up(args)
 
@@ -124,7 +121,8 @@ def provision_cluster(args):
     if args.name not in conf.clusters:
         LOG.error("Unknown cluster '%s'", args.name)
         return 1
-    return core.provision_cluster(args.name, conf)
+    provider = conf.clusters[args.name]["provider"]
+    return core.provision_cluster(args.name, provider, conf)
 
 
 def destroy_cluster(args):
@@ -135,7 +133,8 @@ def destroy_cluster(args):
     if args.name not in conf.clusters:
         LOG.error("Unknown cluster '%s'", args.name)
         return 1
-    return core.destroy_cluster(args.name, conf)
+    provider = conf.clusters[args.name]["provider"]
+    return core.destroy_cluster(args.name, provider, conf)
 
 
 def cluster_up(args):
@@ -146,7 +145,8 @@ def cluster_up(args):
     if args.name not in conf.clusters:
         LOG.error("Unknown cluster '%s'", args.name)
         return 1
-    return core.start_cluster(args.name, conf)
+    provider = conf.clusters[args.name]["provider"]
+    return core.start_cluster(args.name, provider, conf)
 
 
 def cluster_down(args):
@@ -163,8 +163,8 @@ def cluster_env(args):
     if args.name not in conf.clusters:
         LOG.error("Unknown cluster '%s'", args.name)
         return 1
-
-    for k, v in core.cluster_env(args.name, conf):
+    provider = conf.clusters[args.name]["provider"]
+    for k, v in core.cluster_env(args.name, provider, conf):
         print "export %s=%s" % (k, v)
 
 

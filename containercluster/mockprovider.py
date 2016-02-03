@@ -7,7 +7,7 @@ from libcloud.compute.types import NodeState
 
 import mockssh
 
-from containercluster import core
+from containercluster import providers
 
 
 __all__ = []
@@ -59,7 +59,7 @@ class MockDriver(object):
         return [(n, n.public_ips) for n in nodes]
 
 
-class MockProvider(core.Provider):
+class MockProvider(providers.Provider):
 
     name = "mockprovider"
 
@@ -116,6 +116,3 @@ class MockProvider(core.Provider):
 
     def get_image(self, channel):
         return NodeImage(channel, channel, self)
-
-
-core.register_provider("mockprovider", MockProvider())

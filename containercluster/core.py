@@ -1,7 +1,5 @@
 import logging
 import os
-import threading
-import time
 
 from libcloud.compute.types import NodeState
 
@@ -11,28 +9,12 @@ from containercluster import utils
 
 
 __all__ = [
-    "Provider",
+    "cluster_env",
     "create_cluster",
-    "default_provider",
-    "provider_names",
-    "register_provider",
+    "destroy_cluster",
+    "provision_cluster",
     "start_cluster",
 ]
-
-
-PROVIDERS = {}
-
-
-def register_provider(name, impl):
-    PROVIDERS[name] = impl
-
-
-def provider_names():
-    return sorted(PROVIDERS.keys())
-
-
-def default_provider():
-    return PROVIDERS["digitalocean"]
 
 
 class Node(object):
@@ -46,24 +28,14 @@ class Node(object):
 
     log = logging.getLogger(__name__)
 
-    def __init__(self, name, config):
+    def __init__(self, name, provider, config):
         self.name = name
+        self.provider = provider
         self.config = config
-        self.driver_obj = None
-
-    def reboot(self):
-        return self.driver_obj.reboot()
-
-    def wait_until_running(self):
-        node = self.driver_obj
-        self.log.info("Waiting for node %s ...", self.name)
-        nodes = self.driver_obj.driver.wait_until_running([node])
-        self.log.debug("Node %s up: %s", self.name, nodes)
-        self.driver_obj = nodes[0][0]
 
     def provision(self):
         self.log.info("Provisioning node %s", self.name)
-        self.wait_until_running()
+        self.provider.wait_until_running(self)
         with self.ssh_session as s:
             s.exec_command("mkdir -p %s" % (self.certs_dir,))
             sftp = s.open_sftp()
@@ -76,11 +48,15 @@ class Node(object):
 
     @property
     def state(self):
-        return self.driver_obj.state
+        return self.provider.node_state(self)
 
     @property
-    def public_ip(self):
-        return self.driver_obj.public_ips[0]
+    def public_ips(self):
+        return self.provider.node_public_ips(self)
+
+    @property
+    def private_ips(self):
+        return self.provider.node_private_ips(self)
 
     @property
     def cloud_config_template(self):
@@ -99,7 +75,7 @@ class Node(object):
         self.log.debug("Using SSH private key %s for user '%s'",
                        private_key_path, self.ssh_uid)
         return SshSession(uid=self.ssh_uid,
-                          addr=self.public_ip,
+                          addr=self.public_ips[0],
                           port=self.ssh_port,
                           private_key_path=private_key_path)
 
@@ -125,8 +101,8 @@ class Node(object):
 
     def _ensure_tls(self):
         alt_names = [u"127.0.0.1"]
-        alt_names.extend(unicode(ip) for ip in self.driver_obj.public_ips)
-        alt_names.extend(unicode(ip) for ip in self.driver_obj.private_ips)
+        alt_names.extend(unicode(ip) for ip in self.public_ips)
+        alt_names.extend(unicode(ip) for ip in self.private_ips)
         return self.config.node_tls_paths(unicode(self.name), alt_names)
 
 
@@ -141,123 +117,6 @@ class WorkerNode(Node):
 
 
 NODE_TYPES = dict((cls.node_type, cls) for cls in (EtcdNode, WorkerNode))
-
-
-class Provider(object):
-
-    create_key_pair_lock = threading.Lock()
-
-    log = logging.getLogger()
-
-    def __init__(self):
-        self.sizes = {}
-        self.images = {}
-        self.locations = {}
-
-    def ensure_node(self, name, node_type, size, cluster_name, config):
-        cluster = config.clusters[cluster_name]
-        channel = cluster["channel"]
-        location = cluster["location"]
-        self.log.info("Creating node %s (%s, %s, %s, %s)", name, node_type,
-                      size, channel, location)
-        node = NODE_TYPES[node_type](name, config)
-
-        for n in self.driver.list_nodes():
-            if n.name == name:
-                self.log.info("Node '%s' already created", name)
-                node.driver_obj = n
-                break
-        else:
-            channels = {"stable", "beta", "alpha"}
-            if channel not in channels:
-                raise ValueError("Unsupported CoreOS chanel '%s'."
-                                 "Valid values: %s" %
-                                 (channel, sorted(channels)))
-
-            public_ssh_key = self.get_public_ssh_key(config.ssh_key_pair)
-            try:
-                cloud_config_data = node.cloud_config_template % cluster
-            except:
-                cloud_config_data = None
-            n = self.create_node(name, size, channel, location,
-                                 public_ssh_key.fingerprint,
-                                 cloud_config_data)
-            node.driver_obj = n
-
-            # Try waiting a bit before deploying
-            self.log.debug("Waiting a bit before provisioning %s", node)
-            time.sleep(5.0)
-
-            self.provision_node(node)
-
-        return node
-
-    def provision_node(self, node):
-        self.log.debug("provision_node(): Calling node.provision()")
-        return node.provision()
-
-    def reboot_node(self, node):
-        self.log.info("Rebooting node '%s'", node.name)
-        node.reboot()
-
-    def list_nodes(self):
-        return self.driver.list_nodes()
-
-    def get_public_ssh_key(self, ssh_key_pair):
-        with self.create_key_pair_lock:
-            for k in self.driver.list_key_pairs():
-                if k.name == ssh_key_pair.name:
-                    return k
-            return self.driver.create_key_pair(ssh_key_pair.name,
-                                               ssh_key_pair.public_key)
-
-    def get_size(self, name):
-        if not self.sizes:
-            self.sizes.update(dict((s.name, s)
-                                   for s in self.driver.list_sizes()))
-        try:
-            return self.sizes[name]
-        except KeyError:
-            msg = ("Unsupported size '%s'. Valid values: %s" %
-                   (name, ",".join(sorted(self.sizes.keys()))))
-            raise ValueError(msg)
-
-    def get_location(self, name):
-        if not self.locations:
-            self.locations.update(dict((l.id, l)
-                                       for l in self.driver.list_locations()))
-        try:
-            return self.locations[name]
-        except KeyError:
-            raise ValueError("Unsupported location '%s'. Valid values: %s" %
-                             (name, ", ".join(sorted(self.locations.keys()))))
-
-    @property
-    def name(self):
-        raise NotImplementedError("name")
-
-    @property
-    def default_location(self):
-        raise NotImplementedError("default_location")
-
-    @property
-    def default_etcd_size(self):
-        raise NotImplementedError("default_etcd_size")
-
-    @property
-    def default_worker_size(self):
-        raise NotImplementedError("default_worker_size")
-
-    @property
-    def driver(self):
-        raise NotImplementedError("driver")
-
-    def create_node(self, name, size, channel, location, ssh_key_id,
-                    cloud_config_data):
-        raise NotImplementedError("create_node")
-
-    def get_image(self, channel):
-        raise NotImplementedError("get_image")
 
 
 class Cluster(object):
@@ -278,7 +137,7 @@ class Cluster(object):
             nodes_data = self.config.clusters[self.name]["nodes"]
             self._nodes = utils.parallel((self.provider.ensure_node,
                                           n["name"],
-                                          n["type"],
+                                          NODE_TYPES[n["type"]],
                                           n["size"],
                                           self.name,
                                           self.config)
@@ -295,7 +154,7 @@ class Cluster(object):
 
     @property
     def node_names(self):
-        if self._node_names == None:
+        if self._node_names is None:
             self._node_names = {n["name"]for n in self.config.clusters[self.name]["nodes"]}
         return self._node_names
 
@@ -344,8 +203,7 @@ class Cluster(object):
 
         utils.parallel((restart_if_needed, node) for node in self.nodes)
         self.log.info("%s: Waiting for nodes ...", self.name)
-        nodes = self.provider.driver.wait_until_running(n.driver_obj
-                                                        for n in self.nodes)
+        nodes = self.provider.wait_until_running(*self.nodes)
         self.log.debug("start_nodes(): Nodes up: %s", nodes)
 
     def provision_nodes(self):
@@ -357,7 +215,7 @@ class Cluster(object):
             ("ETCDCTL_CA_FILE", self.config.ca_cert_path),
             ("ETCDCTL_CERT_FILE", self.config.admin_cert_path),
             ("ETCDCTL_KEY_FILE", self.config.admin_key_path),
-            ("ETCDCTL_ENDPOINT", ",".join("https://%s:2379" % n.public_ip
+            ("ETCDCTL_ENDPOINT", ",".join("https://%s:2379" % n.public_ips[0]
                                           for n in self.nodes
                                           if n.node_type == "etcd")),
         )
@@ -411,60 +269,31 @@ def create_cluster(name, channel, n_etcd, size_etcd, n_workers, size_worker,
              " worker nodes: %d, worker size: %s, provider: %s, location: %s)",
              name, channel, n_etcd, size_etcd, n_workers, size_worker,
              provider, location)
-    try:
-        provider_impl = PROVIDERS[provider]
-    except KeyError:
-        raise ValueError("Invalid provider `%s`" % (provider,))
-
     config.add_cluster(name, channel, n_etcd, size_etcd,
                        n_workers, size_worker, provider, location)
     config.save()
+    return Cluster(name, provider, config)
 
-    return Cluster(name, provider_impl, config)
 
-
-def provision_cluster(name, config):
+def provision_cluster(name, provider, config):
     LOG.info("Provisioning cluster '%s'", name)
-    provider_name = config.clusters[name]["provider"]
-    try:
-        provider_impl = PROVIDERS[provider_name]
-    except KeyError:
-        raise ValueError("Invalid provider `%s`" % (provider_name,))
-    cluster = Cluster(name, provider_impl, config)
+    cluster = Cluster(name, provider, config)
     return cluster.provision_nodes()
 
 
-def destroy_cluster(name, config):
+def destroy_cluster(name, provider, config):
     LOG.info("Destroying cluster '%s'", name)
-    provider_name = config.clusters[name]["provider"]
-    try:
-        provider_impl = PROVIDERS[provider_name]
-    except KeyError:
-        raise ValueError("Invalid provider `%s`" % (provider_name,))
-    cluster = Cluster(name, provider_impl, config)
+    cluster = Cluster(name, provider, config)
     cluster.destroy_nodes()
     config.remove_cluster(name)
     config.save()
 
 
-def start_cluster(name, config):
-    LOG.info("Starting cluster %s", name)
-    provider_name = config.clusters[name]["provider"]
-    try:
-        provider_impl = PROVIDERS[provider_name]
-    except KeyError:
-        raise ValueError("Invalid provider `%s`" % (provider_name,))
-
-    cluster = Cluster(name, provider_impl, config)
+def start_cluster(name, provider, config):
+    cluster = Cluster(name, provider, config)
     return cluster.start_nodes()
 
 
-def cluster_env(name, config):
-    provider_name = config.clusters[name]["provider"]
-    try:
-        provider_impl = PROVIDERS[provider_name]
-    except KeyError:
-        raise ValueError("Invalid provider `%s`" % (provider_name,))
-
-    cluster = Cluster(name, provider_impl, config)
+def cluster_env(name, provider, config):
+    cluster = Cluster(name, provider, config)
     return sorted(cluster.env_variables)

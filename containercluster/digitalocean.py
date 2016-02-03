@@ -4,13 +4,13 @@ import os
 from libcloud.compute.types import NodeState, Provider
 from libcloud.compute.providers import get_driver
 
-from containercluster import core
+from containercluster import providers
 
 
 __all__ = []
 
 
-class DigitalOceanProvider(core.Provider):
+class DigitalOceanProvider(providers.Provider):
 
     name = "digitalocean"
 
