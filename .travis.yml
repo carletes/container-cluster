@@ -8,8 +8,7 @@ os:
   - linux
 
 install:
-  - pip install -r requirements.txt
-  - pip install pytest
+  - pip install -r requirements-devel.txt
 
 script:
   - py.test

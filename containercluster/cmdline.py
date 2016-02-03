@@ -56,6 +56,11 @@ def main():
                           default=core.default_provider().name)
     create_p.set_defaults(func=create_cluster)
 
+    provision_p = subp.add_parser("provision",
+                                  description=provision_cluster.__doc__)
+    provision_p.add_argument("name", metavar="NAME", help="cluster name")
+    provision_p.set_defaults(func=provision_cluster)
+
     destroy_p = subp.add_parser("destroy", description=destroy_cluster.__doc__)
     destroy_p.add_argument("name", metavar="NAME", help="cluster name")
     destroy_p.set_defaults(func=destroy_cluster)
@@ -67,6 +72,10 @@ def main():
     down_p = subp.add_parser("down", description=cluster_down.__doc__)
     down_p.add_argument("name", metavar="NAME", help="cluster name")
     down_p.set_defaults(func=cluster_down)
+
+    env_p = subp.add_parser("env", description=cluster_env.__doc__)
+    env_p.add_argument("name", metavar="NAME", help="cluster name")
+    env_p.set_defaults(func=cluster_env)
 
     args = p.parse_args()
 
@@ -107,6 +116,17 @@ def create_cluster(args):
     return cluster_up(args)
 
 
+def provision_cluster(args):
+    """Configures all nodes in a cluster.
+
+    """
+    conf = config.Config()
+    if args.name not in conf.clusters:
+        LOG.error("Unknown cluster '%s'", args.name)
+        return 1
+    return core.provision_cluster(args.name, conf)
+
+
 def destroy_cluster(args):
     """Destroy a cluster.
 
@@ -133,6 +153,19 @@ def cluster_down(args):
     """Ensure all nodes of an existing cluster are down.
 
     """
+
+
+def cluster_env(args):
+    """Prints the command-line environment for accessing a cluster.
+
+    """
+    conf = config.Config()
+    if args.name not in conf.clusters:
+        LOG.error("Unknown cluster '%s'", args.name)
+        return 1
+
+    for k, v in core.cluster_env(args.name, conf):
+        print "export %s=%s" % (k, v)
 
 
 if __name__ == "__main__":

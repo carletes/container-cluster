@@ -30,8 +30,7 @@ def test_ca_files(ca):
 
 
 def test_generate_cert(ca):
-    cert_path, key_path = ca.generate_cert("example",
-                                           u"example.com",
+    cert_path, key_path = ca.generate_cert(u"example.com",
                                            [u"www.example.com", u"1.2.3.4"])
     with open(cert_path, "rb") as f:
         cert = x509.load_pem_x509_certificate(f.read(), default_backend())
@@ -45,8 +44,7 @@ def test_generate_cert(ca):
 
 
 def test_cert_alt_names(ca):
-    cert_path, _ = ca.generate_cert("example",
-                                    u"example.com",
+    cert_path, _ = ca.generate_cert(u"example.com",
                                     [u"www.example.com", u"1.2.3.4"])
     with open(cert_path, "rb") as f:
         cert = x509.load_pem_x509_certificate(f.read(), default_backend())

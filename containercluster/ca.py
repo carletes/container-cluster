@@ -38,11 +38,11 @@ class CA(object):
         _, fname = self._ensure_ca_cert()
         return fname
 
-    def generate_cert(self, base_fname, host_name, alt_names=None):
+    def generate_cert(self, host_name, alt_names=None):
         if alt_names is None:
             alt_names = []
-        cert_path = os.path.join(self.certs_dir, base_fname + ".pem")
-        key_path = os.path.join(self.certs_dir, base_fname + "-key.pem")
+        cert_path = os.path.join(self.certs_dir, host_name + ".pem")
+        key_path = os.path.join(self.certs_dir, host_name + "-key.pem")
         with CA._lock:
             if not (os.access(cert_path, os.F_OK) and
                     os.access(key_path, os.F_OK)):
@@ -68,7 +68,8 @@ class CA(object):
                 b = self._builder()
                 b = b.public_key(public_key)
                 b = b.subject_name(x509.Name([
-                    x509.NameAttribute(NameOID.COMMON_NAME, host_name)
+                    x509.NameAttribute(NameOID.ORGANIZATION_NAME, u"Container cluster"),
+                    x509.NameAttribute(NameOID.COMMON_NAME, unicode(host_name))
                 ]))
                 b = b.add_extension(
                     x509.BasicConstraints(ca=False,
@@ -124,6 +125,7 @@ class CA(object):
                 key = rsa.generate_private_key(public_exponent=65537,
                                                key_size=2048,
                                                backend=default_backend())
+                public_key = key.public_key()
                 with open(key_path, "wb") as f:
                     f.write(key.private_bytes(
                         encoding=serialization.Encoding.PEM,
@@ -133,9 +135,9 @@ class CA(object):
 
                 b = self._builder()
                 b = b.subject_name(self.issuer)
-                b = b.public_key(key.public_key())
+                b = b.public_key(public_key)
                 b = b.add_extension(x509.BasicConstraints(ca=True,
-                                                          path_length=0),
+                                                          path_length=2),
                                     critical=True)
                 b = b.add_extension(x509.KeyUsage(digital_signature=False,
                                                   content_commitment=False,
@@ -147,6 +149,14 @@ class CA(object):
                                                   encipher_only=False,
                                                   decipher_only=False),
                                     critical=True)
+                b = b.add_extension(
+                    x509.SubjectKeyIdentifier.from_public_key(public_key),
+                    critical=False
+                )
+                b = b.add_extension(
+                    x509.AuthorityKeyIdentifier.from_issuer_public_key(public_key),
+                    critical=False
+                )
                 cert = b.sign(private_key=key,
                               algorithm=hashes.SHA256(),
                               backend=default_backend())
@@ -165,8 +175,10 @@ class CA(object):
 
     @property
     def issuer(self):
-        return x509.Name([x509.NameAttribute(NameOID.COMMON_NAME,
-                                             u"Container cluster CA")])
+        return x509.Name([
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, u"Container cluster"),
+            x509.NameAttribute(NameOID.COMMON_NAME, u"Container cluster CA"),
+        ])
 
     @property
     def certs_dir(self):

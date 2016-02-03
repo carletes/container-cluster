@@ -18,6 +18,8 @@ __all__ = [
 
 class Config(object):
 
+    dir_lock = threading.RLock()
+
     log = logging.getLogger(__name__)
 
     def __init__(self, home=None):
@@ -99,14 +101,31 @@ class Config(object):
         return ca.CA(self.ca_dir).cert_path
 
     @property
+    def admin_cert_path(self):
+        fname, _ = self._ensure_admin_tls()
+        return fname
+
+    @property
+    def admin_key_path(self):
+        _, fname = self._ensure_admin_tls()
+        return fname
+
+    def node_tls_paths(self, node_name, alt_names=None):
+        return ca.CA(self.ca_dir).generate_cert(node_name, alt_names)
+
+    def _ensure_admin_tls(self):
+        return self.node_tls_paths(u"admin")
+
+    @property
     def ssh_key_pair(self):
         return SSHKeyPair(self.ssh_dir)
 
     def _ensure_dir(self, dname):
-        if not os.access(dname, os.F_OK):
-            self.log.info("Creating directory %s", dname)
-            os.makedirs(dname)
-        return dname
+        with self.dir_lock:
+            if not os.access(dname, os.F_OK):
+                self.log.info("Creating directory %s", dname)
+                os.makedirs(dname)
+            return dname
 
 
 class SSHKeyPair(object):
@@ -134,6 +153,10 @@ class SSHKeyPair(object):
         with open(fname, "rt") as f:
             return f.read()
 
+    @property
+    def private_key_path(self):
+        return self._ensure_ssh_key()
+
     def _ensure_ssh_key(self):
         fname = self._key_file_name
         with self.ssh_keygen_lock:
@@ -143,7 +166,12 @@ class SSHKeyPair(object):
         return fname
 
 
+LOG = logging.getLogger(__name__)
+
+
 def make_discovery_token(size):
     res = requests.get("https://discovery.etcd.io/new?size=%d" % (size,))
     res.raise_for_status()
-    return res.content[len("https://discovery.etcd.io/"):]
+    token = res.content[len("https://discovery.etcd.io/"):]
+    LOG.debug("New token for %d node(s): %s", size, token)
+    return token

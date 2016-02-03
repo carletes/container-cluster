@@ -34,3 +34,15 @@ def test_save(config):
     config.save()
     new_config = Config(config.home)
     assert "test-cluster" in new_config.clusters
+
+
+def test_node_tls_paths(config):
+    cert_path, key_path = config.node_tls_paths(u"some-node-name",
+                                                [u"127.0.0.1", u"192.168.0.1"])
+    assert os.stat(cert_path).st_size
+    assert os.stat(key_path).st_size
+
+
+def test_admin_tls_paths(config):
+    for fname in (config.admin_cert_path, config.admin_key_path):
+        assert os.stat(fname).st_size
