@@ -72,12 +72,13 @@ def parallel(tasks):
     return results
 
 
-def wait_for_port_open(host, port, timeout=None):
+def wait_for_port_open(host, port, timeout=None, check_interval=0.1):
     start = time.time()
     while True:
         try:
             LOG.debug("Trying %s:%d ...", host, port)
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(check_interval)
             sock.connect((host, port))
             sock.close()
         except:
@@ -85,7 +86,6 @@ def wait_for_port_open(host, port, timeout=None):
                 elapsed = time.time() - start
                 if elapsed > timeout:
                     raise Exception("Timeout for %s:%d" % (host, port))
-            time.sleep(0.1)
         else:
             elapsed = time.time() - start
             LOG.debug("Port %s:%d open after %g s", host, port, elapsed)
