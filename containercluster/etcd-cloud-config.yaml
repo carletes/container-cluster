@@ -35,3 +35,13 @@ write_files:
       Environment=FLEET_ETCD_CAFILE=/home/core/ca.pem
       Environment=FLEET_ETCD_CERTFILE=/home/core/node.pem
       Environment=FLEET_ETCD_KEYFILE=/home/core/node-key.pem
+  - path: /etc/profile.d/10-certificates.sh
+    permissions: 0644
+    content: |
+      export ETCDCTL_CA_FILE=/home/core/ca.pem
+      export ETCDCTL_CERT_FILE=/home/core/node.pem
+      export ETCDCTL_KEY_FILE=/home/core/node-key.pem
+  - path: /etc/profile.d/20-profile.sh
+    permissions: 0644
+    content: |
+      export ETCDCTL_ENDPOINT=https://$private_ipv4:2379

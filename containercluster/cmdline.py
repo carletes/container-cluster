@@ -110,7 +110,8 @@ def create_cluster(args):
     core.create_cluster(args.name, args.channel, args.num_etcd, args.size_etcd,
                         args.num_workers, args.size_workers, provider,
                         args.location, conf)
-    return cluster_up(args)
+    cluster_up(args)
+    return provision_cluster(args)
 
 
 def provision_cluster(args):

@@ -77,7 +77,7 @@ class MockProvider(providers.Provider):
         super(MockProvider, self).__init__()
         self.ssh_server = mockssh.Server({})
 
-    def provision_node(self, node):
+    def provision_node(self, node, vars):
         self.log.debug("MockProvider: Entering provision_node()")
         uid = node.ssh_uid
         private_key_path = node.config.ssh_key_pair.private_key_path
@@ -90,7 +90,7 @@ class MockProvider(providers.Provider):
         node.certs_dir = tempfile.mkdtemp()
         node.sudo_cmd = ""
 
-        return super(MockProvider, self).provision_node(node)
+        return super(MockProvider, self).provision_node(node, vars)
 
     def create_node(self, name, size, channel, location, ssh_key_id,
                     cloud_config_data):

@@ -1,5 +1,6 @@
 import logging
 import os
+import tempfile
 
 from libcloud.compute.types import NodeState
 
@@ -33,7 +34,7 @@ class Node(object):
         self.provider = provider
         self.config = config
 
-    def provision(self):
+    def provision(self, vars):
         self.log.info("Provisioning node %s", self.name)
         self.provider.wait_until_running(self)
 
@@ -116,9 +117,31 @@ class EtcdNode(Node):
     node_type = "etcd"
 
 
+WORKER_PROFILE_TEMPLATE = """
+export ETCDCTL_ENDPOINT=%(etcd_endpoint)s
+""".lstrip()
+
+
 class WorkerNode(Node):
 
     node_type = "worker"
+
+    def provision(self, vars):
+        fd, path = tempfile.mkstemp()
+        os.write(fd, WORKER_PROFILE_TEMPLATE % vars)
+        os.close(fd)
+        with self.ssh_session as s:
+            s.exec_command("%s mkdir -p /etc/profile.d" % (self.sudo_cmd,))
+            s.exec_command("%s chown -R %s /etc/profile.d" %
+                           (self.sudo_cmd, self.ssh_uid))
+            try:
+                sftp = s.open_sftp()
+                sftp.put(path, "/etc/profile.d/20-worker-node.sh")
+            finally:
+                s.exec_command("%s chown -R root: /etc/profile.d" %
+                               (self.sudo_cmd,))
+
+        super(WorkerNode, self).provision(vars)
 
 
 NODE_TYPES = dict((cls.node_type, cls) for cls in (EtcdNode, WorkerNode))
@@ -148,6 +171,16 @@ class Cluster(object):
                                           self.config)
                                          for n in nodes_data)
         return self._nodes
+
+    @property
+    def etcd_nodes(self):
+        ret = []
+        for n in self.nodes:
+            self.log.debug("etcd_nodes(): Examining %s", n)
+            if isinstance(n, EtcdNode):
+                ret.append(n)
+        self.log.debug("etcd_nodes(): Returning %s", ret)
+        return ret
 
     @property
     def exisiting_nodes(self):
@@ -212,7 +245,16 @@ class Cluster(object):
         self.log.debug("start_nodes(): Nodes up: %s", nodes)
 
     def provision_nodes(self):
-        utils.parallel((self.provider.provision_node, n) for n in self.nodes)
+        vars = {
+            "etcd_endpoint": self.etcd_endpoint,
+        }
+        utils.parallel((self.provider.provision_node, n, vars)
+                       for n in self.nodes)
+
+    @property
+    def etcd_endpoint(self):
+        return ",".join("https://%s:2379" % (n.public_ips[0],)
+                        for n in self.etcd_nodes)
 
     @property
     def env_variables(self):
@@ -220,9 +262,7 @@ class Cluster(object):
             ("ETCDCTL_CA_FILE", self.config.ca_cert_path),
             ("ETCDCTL_CERT_FILE", self.config.admin_cert_path),
             ("ETCDCTL_KEY_FILE", self.config.admin_key_path),
-            ("ETCDCTL_ENDPOINT", ",".join("https://%s:2379" % n.public_ips[0]
-                                          for n in self.nodes
-                                          if n.node_type == "etcd")),
+            ("ETCDCTL_ENDPOINT", self.etcd_endpoint),
         )
 
 

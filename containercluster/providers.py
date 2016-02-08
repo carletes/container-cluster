@@ -78,13 +78,12 @@ class Provider(object):
                                  public_ssh_key.fingerprint,
                                  cloud_config_data)
             self._node_objs[name] = n
-            self.provision_node(node)
 
         return node
 
-    def provision_node(self, node):
+    def provision_node(self, node, vars):
         self.log.debug("provision_node(): Calling node.provision()")
-        return node.provision()
+        return node.provision(vars)
 
     def reboot_node(self, node):
         self.log.info("Rebooting node '%s'", node.name)

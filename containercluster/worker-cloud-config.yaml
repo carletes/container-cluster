@@ -1,1 +1,9 @@
 #cloud-config
+
+write_files:
+  - path: /etc/profile.d/10-certificates.sh
+    permissions: 0644
+    content: |
+      export ETCDCTL_CA_FILE=/home/core/ca.pem
+      export ETCDCTL_CERT_FILE=/home/core/node.pem
+      export ETCDCTL_KEY_FILE=/home/core/node-key.pem
