@@ -71,7 +71,9 @@ class Provider(object):
 
             public_ssh_key = self.get_public_ssh_key(config.ssh_key_pair)
             try:
-                cloud_config_data = node.cloud_config_template % cluster
+                vars = dict(cluster)
+                vars["node_name"] = name
+                cloud_config_data = node.cloud_config_template % vars
             except:
                 cloud_config_data = None
             n = self.create_node(name, size, channel, location,

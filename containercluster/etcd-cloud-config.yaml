@@ -7,6 +7,7 @@ coreos:
     initial-advertise-peer-urls: https://$private_ipv4:2380
     listen-client-urls: https://0.0.0.0:2379
     listen-peer-urls: https://$private_ipv4:2380
+    name: %(node_name)s
     debug: true
   fleet:
     public-ip: $private_ipv4
