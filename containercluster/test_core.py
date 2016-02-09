@@ -1,10 +1,12 @@
 import codecs
+import json
 import os
 import platform
 import pwd
 import tempfile
 
 import mockssh
+import yaml
 
 import pytest
 
@@ -53,6 +55,27 @@ def test_env_variables(mock_cluster):
     with open(env["ETCDCTL_KEY_FILE"], "rt") as f:
         assert f.read().startswith("-----BEGIN RSA PRIVATE KEY-----")
     assert env["ETCDCTL_ENDPOINT"].split(",")
+
+
+def test_cloud_config_vars(mock_cluster):
+    for node in mock_cluster.nodes:
+        vars = node.cloud_config_vars
+        assert vars["node_name"] == node.name
+        if isinstance(node, core.WorkerNode):
+            assert "etcd_endpoint" in vars
+            network_config = json.loads(vars["network_config"])
+            assert "Network" in network_config
+            assert "SubnetLen" in network_config
+            assert "SubnetMin" in network_config
+            assert "SubnetMax" in network_config
+            assert "Backend" in network_config
+
+
+def test_cloud_config_data(mock_cluster):
+    for node in mock_cluster.nodes:
+        assert node.cloud_config_data.startswith("#cloud-config\n")
+        cloud_config = yaml.load(node.cloud_config_data)
+        assert "coreos" in cloud_config
 
 
 def ssh_private_key_path():

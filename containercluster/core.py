@@ -1,4 +1,5 @@
 import logging
+import json
 import os
 
 from libcloud.compute.types import NodeState
@@ -77,10 +78,22 @@ class Node(object):
 
     @property
     def cloud_config_vars(self):
-        token = self.config.clusters[self.cluster.name]["discovery_token"]
+        cluster = self.config.clusters[self.cluster.name]
         return {
             "node_name": self.name,
-            "discovery_token": token,
+            "discovery_token": cluster["discovery_token"],
+            "network_config": json.dumps(
+                {
+                    "Network": str(cluster["network"]),
+                    "SubnetLen": cluster["subnet_length"],
+                    "SubnetMin": str(cluster["subnet_min"].network_address),
+                    "SubnetMax": str(cluster["subnet_max"].network_address),
+                    "Backend": {
+                        "Type": "vxlan",
+                        "VNI": 1,
+                        "Port": 8472,
+                    }
+                }),
         }
 
     @property
@@ -327,13 +340,12 @@ LOG = logging.getLogger(__name__)
 
 
 def create_cluster(name, channel, n_etcd, size_etcd, n_workers, size_worker,
-                   provider, location, config):
-    LOG.info("Creating cluster %s (channel: %s, etcd nodes: %d, etcd size: %s,"
-             " worker nodes: %d, worker size: %s, provider: %s, location: %s)",
-             name, channel, n_etcd, size_etcd, n_workers, size_worker,
-             provider, location)
+                   provider, location, network, subnet_length, subnet_min,
+                   subnet_max, config):
+    LOG.info("Creating cluster %s", name)
     config.add_cluster(name, channel, n_etcd, size_etcd,
-                       n_workers, size_worker, provider, location)
+                       n_workers, size_worker, provider, location, network,
+                       subnet_length, subnet_min, subnet_max)
     config.save()
     return Cluster(name, provider, config)
 

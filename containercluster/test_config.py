@@ -1,5 +1,7 @@
 import os
 
+import ipaddress
+
 from containercluster.config import Config
 
 
@@ -20,7 +22,10 @@ def test_add_cluster(config):
     assert "test-cluster" not in config.clusters
 
     config.add_cluster("test-cluster", "alpha", 3, "512mb", 4, "1gb",
-                       "digitalocean", "lon1")
+                       "digitalocean", "lon1",
+                       ipaddress.ip_network(u"172.16.0.0/16"), 24,
+                       ipaddress.ip_network(u"172.16.1.0/24"),
+                       ipaddress.ip_network(u"172.16.254.0"))
     assert "test-cluster" in config.clusters
     assert config.clusters["test-cluster"]["discovery_token"]
 
@@ -29,11 +34,14 @@ def test_save(config):
     assert "test-cluster" not in config.clusters
 
     config.add_cluster("test-cluster", "alpha", 3, "512mb", 4, "1gb",
-                       "digitalocean", "lon1")
+                       "digitalocean", "lon1",
+                       ipaddress.ip_network(u"172.16.0.0/16"), 24,
+                       ipaddress.ip_network(u"172.16.1.0"),
+                       ipaddress.ip_network(u"172.16.254.0"))
 
     config.save()
     new_config = Config(config.home)
-    assert "test-cluster" in new_config.clusters
+    assert config.clusters == new_config.clusters
 
 
 def test_node_tls_paths(config):

@@ -2,6 +2,8 @@ import argparse
 import logging
 import sys
 
+import ipaddress
+
 from containercluster import config, core
 
 from containercluster.providers import (
@@ -51,6 +53,18 @@ def main():
                           help="cloud provider (default: %(default)s)",
                           choices=provider_names(),
                           default=default_provider().name)
+    create_p.add_argument("--flannel-network", metavar="xxx.xxx.xxx.xxx/nn",
+                          help="flannel network (default: %(default)s)",
+                          default="172.16.0.0/16")
+    create_p.add_argument("--flannel-subnet-length", metavar="N", type=int,
+                          help="flannel subnet length (default: %(default)s)",
+                          default=24)
+    create_p.add_argument("--flannel-subnet-min", metavar="xxx.xxx.xxx.xxx",
+                          help="minimum flannel subnet (default: %(default)s)",
+                          default="172.16.1.0")
+    create_p.add_argument("--flannel-subnet-max", metavar="xxx.xxx.xxx.xxx",
+                          help="maximum flannel subnet (default: %(default)s)",
+                          default="172.16.254.0")
     create_p.set_defaults(func=create_cluster)
 
     provision_p = subp.add_parser("provision",
@@ -106,10 +120,28 @@ def create_cluster(args):
     if args.name in conf.clusters:
         LOG.error("Cluster `%s` already exists", args.name)
         return 1
+
+    network = ipaddress.ip_network(u"%s" % (args.flannel_network,))
+    subnet_length = args.flannel_subnet_length
+    subnet_min = ipaddress.ip_network(u"%s/%d" % (
+        args.flannel_subnet_min, subnet_length
+    ))
+    subnet_max = ipaddress.ip_network(u"%s/%d" % (
+        args.flannel_subnet_max, subnet_length
+    ))
+    for net in (subnet_min, subnet_max):
+        if net.prefixlen != subnet_length:
+            LOG.error("Network %s is not a /%d network", net, subnet_length)
+            return 1
+        if not net.subnet_of(network):
+            LOG.error("Network %s is not a subnet of %s", net, network)
+            return 1
+
     provider = get_provider(args.provider)
     core.create_cluster(args.name, args.channel, args.num_etcd, args.size_etcd,
                         args.num_workers, args.size_workers, provider,
-                        args.location, conf)
+                        args.location, network, subnet_length, subnet_min,
+                        subnet_max, conf)
     cluster_up(args)
     return provision_cluster(args)
 

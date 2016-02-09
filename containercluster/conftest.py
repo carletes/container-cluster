@@ -1,6 +1,8 @@
 import logging
 import tempfile
 
+import ipaddress
+
 from pytest import fixture, yield_fixture
 
 from containercluster import core, mockprovider, providers
@@ -26,6 +28,9 @@ def mock_cluster(scope="function"):
     conf = Config(home)
     provider = providers.get_provider("mockprovider")
     cluster = core.create_cluster("test-cluster1", "alpha", 3, "512mb", 4,
-                                  "1gb", provider, "lon1", conf)
+                                  "1gb", provider, "lon1",
+                                  ipaddress.ip_network(u"172.16.0.0/16"), 24,
+                                  ipaddress.ip_network(u"172.16.1.0"),
+                                  ipaddress.ip_network(u"172.16.254.0"), conf)
     with cluster.provider.ssh_server:
         yield cluster

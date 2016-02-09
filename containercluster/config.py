@@ -4,6 +4,7 @@ import platform
 import pwd
 import threading
 
+import ipaddress
 import requests
 import yaml
 
@@ -30,12 +31,17 @@ class Config(object):
         self._clusters = {}
 
     def add_cluster(self, name, channel, n_etcd, size_etcd, n_workers,
-                    size_worker, provider, location):
+                    size_worker, provider, location, network, subnet_length,
+                    subnet_min, subnet_max):
         cluster = {
             "provider": provider,
             "channel": channel,
             "location": location,
             "discovery_token": make_discovery_token(n_etcd),
+            "network": network,
+            "subnet_length": subnet_length,
+            "subnet_min": subnet_min,
+            "subnet_max": subnet_max,
             "nodes": [],
         }
         for i in range(n_etcd):
@@ -61,8 +67,16 @@ class Config(object):
     def save(self):
         fname = self.clusters_yaml_path
         self.log.info("Saving clusters definitions to %s", fname)
+        clusters = dict(self._clusters)
+        for c in clusters.values():
+            c = dict(c)
+            for k in ("network", "subnet_min", "subnet_max"):
+                c[k] = str(c[k])
         with open(fname, "wt") as f:
-            yaml.dump(self._clusters, f)
+            yaml.dump(clusters, f)
+
+    def __repr__(self):
+        return "<Config %r>" % (self._clusters,)
 
     @property
     def clusters(self):
@@ -72,6 +86,9 @@ class Config(object):
                 self.log.info("Loading clusters definitions from %s", fname)
                 with open(fname, "rt") as f:
                     self._clusters = yaml.load(f)
+                for c in self._clusters.values():
+                    for k in ("network", "subnet_min", "subnet_max"):
+                        c[k] = ipaddress.ip_network(c[k])
             else:
                 self._clusters = {}
         return dict(self._clusters)

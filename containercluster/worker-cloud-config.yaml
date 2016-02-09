@@ -1,5 +1,26 @@
 #cloud-config
 
+coreos:
+  flannel:
+    etcd_endpoints: %(etcd_endpoint)s
+    etcd_keyfile: /home/core/node-key.pem
+    etcd_certfile: /home/core/node.pem
+    etcd_cafile: /home/core/ca.pem
+    iface: $private_ipv4
+  units:
+    - name: flanneld.service
+      drop-ins:
+        - name: 50-network-config.conf
+          content: |
+            [Service]
+            Environment=ETCD_SSL_DIR=/home/core
+            Environment=ETCDCTL_ENDPOINT=%(etcd_endpoint)s
+            Environment=ETCDCTL_CA_FILE=/home/core/ca.pem
+            Environment=ETCDCTL_CERT_FILE=/home/core/node.pem
+            Environment=ETCDCTL_KEY_FILE=/home/core/node-key.pem
+            ExecStartPre=/usr/bin/etcdctl set /coreos.com/network/config '%(network_config)s'
+      command: start
+
 write_files:
   - path: /etc/profile.d/10-etcdctl.sh
     permissions: 0644
