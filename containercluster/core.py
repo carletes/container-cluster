@@ -29,9 +29,10 @@ class Node(object):
 
     log = logging.getLogger(__name__)
 
-    def __init__(self, name, provider, config):
+    def __init__(self, name, provider, cluster, config):
         self.name = name
         self.provider = provider
+        self.cluster = cluster
         self.config = config
 
     def provision(self, vars):
@@ -74,6 +75,18 @@ class Node(object):
 
         with open(fname, "rt") as f:
             return f.read()
+
+    @property
+    def cloud_config_vars(self):
+        token = self.config.clusters[self.cluster.name]["discovery_token"]
+        return {
+            "node_name": self.name,
+            "discovery_token": token,
+        }
+
+    @property
+    def cloud_config_data(self):
+        return self.cloud_config_template % self.cloud_config_vars
 
     @property
     def ssh_session(self):
@@ -163,13 +176,28 @@ class Cluster(object):
         if not self._nodes:
             self.log.info("Creating nodes for cluster '%s'", self.name)
             nodes_data = self.config.clusters[self.name]["nodes"]
+
+            # Start first the `etcd` nodes, since the etcd endpoint is needed in
+            # all other nodes, and it will not be known until the `etcd` nodes
+            # are up.
             self._nodes = utils.parallel((self.provider.ensure_node,
                                           n["name"],
                                           NODE_TYPES[n["type"]],
                                           n["size"],
-                                          self.name,
+                                          self,
                                           self.config)
-                                         for n in nodes_data)
+                                         for n in nodes_data
+                                         if n["type"] == "etcd")
+
+            # Start now all non-etcd nodes.
+            self._nodes.extend(utils.parallel((self.provider.ensure_node,
+                                               n["name"],
+                                               NODE_TYPES[n["type"]],
+                                               n["size"],
+                                               self,
+                                               self.config)
+                                              for n in nodes_data
+                                              if n["type"] != "etcd"))
         return self._nodes
 
     @property

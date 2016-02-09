@@ -49,13 +49,13 @@ class Provider(object):
         self.locations = {}
         self._node_objs = {}
 
-    def ensure_node(self, name, node_class, size, cluster_name, config):
-        cluster = config.clusters[cluster_name]
-        channel = cluster["channel"]
-        location = cluster["location"]
+    def ensure_node(self, name, node_class, size, cluster, config):
+        cluster_config = config.clusters[cluster.name]
+        channel = cluster_config["channel"]
+        location = cluster_config["location"]
         self.log.info("Creating node %s (%s, %s, %s, %s)", name, node_class,
                       size, channel, location)
-        node = node_class(name, self, config)
+        node = node_class(name, self, cluster, config)
 
         for n in self.driver.list_nodes():
             if n.name == name:
@@ -70,15 +70,9 @@ class Provider(object):
                                  (channel, sorted(channels)))
 
             public_ssh_key = self.get_public_ssh_key(config.ssh_key_pair)
-            try:
-                vars = dict(cluster)
-                vars["node_name"] = name
-                cloud_config_data = node.cloud_config_template % vars
-            except:
-                cloud_config_data = None
             n = self.create_node(name, size, channel, location,
                                  public_ssh_key.fingerprint,
-                                 cloud_config_data)
+                                 node.cloud_config_data)
             self._node_objs[name] = n
 
         return node
