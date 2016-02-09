@@ -41,7 +41,7 @@ class Node(object):
 
         ssh_host = self.public_ips[0]
         self.log.debug("Waiting for SSH on %s:%d", ssh_host, self.ssh_port)
-        utils.wait_for_port_open(ssh_host, self.ssh_port, timeout=60.0)
+        utils.wait_for_port_open(ssh_host, self.ssh_port, check_interval=1.0)
 
         with self.ssh_session as s:
             s.exec_command("mkdir -p %s" % (self.certs_dir,))
