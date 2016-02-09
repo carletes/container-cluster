@@ -74,6 +74,7 @@ class Provider(object):
                                  public_ssh_key.fingerprint,
                                  node.cloud_config_data)
             self._node_objs[name] = n
+            self.wait_until_running(n)
 
         return node
 

@@ -1,6 +1,5 @@
 import logging
 import os
-import tempfile
 
 from libcloud.compute.types import NodeState
 
@@ -130,34 +129,22 @@ class EtcdNode(Node):
     node_type = "etcd"
 
 
-WORKER_PROFILE_TEMPLATE = """
-export ETCDCTL_ENDPOINT=%(etcd_endpoint)s
-""".lstrip()
-
-
 class WorkerNode(Node):
 
     node_type = "worker"
 
-    def provision(self, vars):
-        fd, path = tempfile.mkstemp()
-        os.write(fd, WORKER_PROFILE_TEMPLATE % vars)
-        os.close(fd)
-        with self.ssh_session as s:
-            s.exec_command("%s mkdir -p /etc/profile.d" % (self.sudo_cmd,))
-            s.exec_command("%s chown -R %s /etc/profile.d" %
-                           (self.sudo_cmd, self.ssh_uid))
-            try:
-                sftp = s.open_sftp()
-                sftp.put(path, "/etc/profile.d/20-worker-node.sh")
-            finally:
-                s.exec_command("%s chown -R root: /etc/profile.d" %
-                               (self.sudo_cmd,))
-
-        super(WorkerNode, self).provision(vars)
+    @property
+    def cloud_config_vars(self):
+        vars = dict(super(WorkerNode, self).cloud_config_vars)
+        vars["etcd_endpoint"] = self.cluster.etcd_endpoint
+        return vars
 
 
 NODE_TYPES = dict((cls.node_type, cls) for cls in (EtcdNode, WorkerNode))
+
+
+def make_etcd_endpoint(nodes):
+    return ",".join("https://%s:2379" % (n.public_ips[0],) for n in nodes)
 
 
 class Cluster(object):
@@ -170,6 +157,7 @@ class Cluster(object):
         self.config = config
         self._nodes = []
         self._node_names = None
+        self._etcd_endpoint = None
 
     @property
     def nodes(self):
@@ -188,6 +176,7 @@ class Cluster(object):
                                           self.config)
                                          for n in nodes_data
                                          if n["type"] == "etcd")
+            self._etcd_endpoint = make_etcd_endpoint(self._nodes)
 
             # Start now all non-etcd nodes.
             self._nodes.extend(utils.parallel((self.provider.ensure_node,
@@ -281,8 +270,9 @@ class Cluster(object):
 
     @property
     def etcd_endpoint(self):
-        return ",".join("https://%s:2379" % (n.public_ips[0],)
-                        for n in self.etcd_nodes)
+        if self._etcd_endpoint is None:
+            self._etcd_endpoint = make_etcd_endpoint(self.nodes)
+        return self._etcd_endpoint
 
     @property
     def env_variables(self):
