@@ -88,6 +88,10 @@ def main():
     env_p.add_argument("name", metavar="NAME", help="cluster name")
     env_p.set_defaults(func=cluster_env)
 
+    ssh_p = subp.add_parser("ssh", description=ssh.__doc__)
+    ssh_p.add_argument("name", metavar="NAME", help="cluster name")
+    ssh_p.set_defaults(func=ssh)
+
     args = p.parse_args()
 
     if args.quiet:
@@ -199,6 +203,18 @@ def cluster_env(args):
     provider = conf.clusters[args.name]["provider"]
     for k, v in core.cluster_env(args.name, provider, conf):
         print "export %s=%s" % (k, v)
+
+
+def ssh(args):
+    """Open a `screen(1)` session connected to all cluster nodes.
+
+    """
+    conf = config.Config()
+    if args.name not in conf.clusters:
+        LOG.error("Unknown cluster '%s'", args.name)
+        return 1
+    provider = conf.clusters[args.name]["provider"]
+    return core.ssh_session(args.name, provider, conf)
 
 
 if __name__ == "__main__":

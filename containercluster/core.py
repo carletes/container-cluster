@@ -1,6 +1,8 @@
 import logging
 import json
 import os
+import subprocess
+import tempfile
 
 from libcloud.compute.types import NodeState
 
@@ -372,3 +374,15 @@ def start_cluster(name, provider, config):
 def cluster_env(name, provider, config):
     cluster = Cluster(name, provider, config)
     return sorted(cluster.env_variables)
+
+
+def ssh_session(name, provider, config):
+    cluster = Cluster(name, provider, config)
+    fd, path = tempfile.mkstemp()
+    for node in sorted(cluster.nodes, key=lambda node: node.name):
+        os.write(fd, "screen -t %s ssh -i %s core@%s\n" %
+                 (node.name, config.ssh_key_pair.private_key_path,
+                  node.public_ips[0]))
+    p = subprocess.Popen("screen -S %s -c %s" % (cluster.name, path),
+                         shell=True)
+    p.wait()
