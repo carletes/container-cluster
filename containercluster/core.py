@@ -62,9 +62,20 @@ class Node(object):
                 s.exec_command("%s chown -R root: %s" %
                                (self.sudo_cmd, self.certs_dir))
 
-    @property
+    def destroy(self):
+        for fname in self.tls_paths:
+            self.log.debug("Removing %s", fname)
+            try:
+                os.unlink(fname)
+            except OSError:
+                self.log.warn("Cannot remove %s", fname, exc_info=True)
+
     def state(self):
         return self.provider.node_state(self)
+
+    @property
+    def tls_paths(self):
+        return [self.tls_cert_path, self.tls_key_path]
 
     @property
     def public_ips(self):
@@ -202,6 +213,11 @@ class MasterNode(Node):
                                (self.sudo_cmd, self.certs_dir))
 
     @property
+    def tls_paths(self):
+        return (super(MasterNode, self).tls_paths +
+                [self.apiserver_cert_path, self.apiserver_key_path])
+
+    @property
     def apiserver_cert_path(self):
         cert_fname, _ = self._ensure_apiserver_tls()
         return cert_fname
@@ -298,9 +314,14 @@ class Cluster(object):
     @property
     def exisiting_nodes(self):
         ret = []
-        for n in self.provider.list_nodes():
-            if n.name in self.node_names:
-                ret.append(n)
+        driver_nodes = dict((n.name, n) for n in self.provider.list_nodes())
+        for n in self.config.clusters[self.name]["nodes"]:
+            name = n["name"]
+            if name in driver_nodes:
+                node_class = NODE_TYPES[n["type"]]
+                node = node_class(name, self.provider, self, self.config)
+                self.provider.register_node(name, driver_nodes[name])
+                ret.append(node)
         return ret
 
     @property
@@ -312,17 +333,8 @@ class Cluster(object):
     def destroy_nodes(self):
         for n in self.exisiting_nodes:
             self.log.debug("Destroying node '%s'", n.name)
-            try:
-                n.destroy()
-            except:
-                self.log.warn("Cannot destroy node %s", n.name, exc_info=True)
-        for n in self.node_names:
-            for f in self.config.node_tls_paths(unicode(n)):
-                self.log.debug("Removing %s", f)
-                try:
-                    os.unlink(f)
-                except OSError:
-                    self.log.warn("Cannot remove %s", f)
+            n.destroy()
+            self.provider.destroy_node(n)
 
     def start_nodes(self):
         self.log.info("Starting nodes for cluster '%s'", self.name)

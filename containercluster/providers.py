@@ -60,7 +60,7 @@ class Provider(object):
         for n in self.driver.list_nodes():
             if n.name == name:
                 self.log.info("Node '%s' already created", name)
-                self._node_objs[name] = n
+                self.register_node(name, n)
                 break
         else:
             channels = {"stable", "beta", "alpha"}
@@ -73,10 +73,22 @@ class Provider(object):
             n = self.create_node(name, size, channel, location,
                                  public_ssh_key.fingerprint,
                                  node.cloud_config_data)
-            self._node_objs[name] = n
+            self.register_node(name, n)
             self.wait_until_running(n)
 
         return node
+
+    def destroy_node(self, node):
+        n = self._node_objs[node.name]
+        self.log.debug("Destroying node '%s'", node.name)
+        try:
+            n.destroy()
+        except:
+            self.log.warn("Cannot destroy node %s", node.name, exc_info=True)
+        del self._node_objs[node.name]
+
+    def register_node(self, name, node_driver_obj):
+        self._node_objs[name] = node_driver_obj
 
     def provision_node(self, node, vars):
         self.log.debug("provision_node(): Calling node.provision()")

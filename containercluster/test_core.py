@@ -5,6 +5,8 @@ import platform
 import pwd
 import tempfile
 
+from itertools import chain
+
 import mockssh
 import yaml
 
@@ -32,12 +34,11 @@ def test_create_cluster(mock_cluster):
 
 
 def test_destroy_cluster(mock_cluster):
-    tls_paths = []
-    for n in mock_cluster.nodes:
-        for fname in mock_cluster.config.node_tls_paths(n.name):
-            assert os.access(fname, os.F_OK)
-            tls_paths.append(fname)
+    tls_paths = list(chain(*(n.tls_paths for n in mock_cluster.nodes)))
     assert tls_paths
+
+    for fname in tls_paths:
+        assert os.access(fname, os.F_OK)
 
     mock_cluster.destroy_nodes()
     for fname in tls_paths:
