@@ -31,6 +31,9 @@ def mock_cluster(scope="function"):
                                   "1gb", provider, "lon1",
                                   ipaddress.ip_network(u"172.16.0.0/16"), 24,
                                   ipaddress.ip_network(u"172.16.1.0"),
-                                  ipaddress.ip_network(u"172.16.254.0"), conf)
+                                  ipaddress.ip_network(u"172.16.254.0"),
+                                  ipaddress.ip_network(u"172.17.0.0/24"),
+                                  ipaddress.ip_address(u"172.17.0.10"),
+                                  ipaddress.ip_address(u"172.17.0.1"), conf)
     with cluster.provider.ssh_server:
         yield cluster

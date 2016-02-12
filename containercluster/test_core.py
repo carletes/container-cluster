@@ -23,9 +23,12 @@ def test_cloud_config_template(mock_cluster):
 
 
 def test_create_cluster(mock_cluster):
-    assert len(mock_cluster.nodes) == 7
+    assert len(mock_cluster.nodes) == 8
+    node_types = set()
     for node in mock_cluster.nodes:
         assert node.name.startswith(mock_cluster.name)
+        node_types.add(node.node_type)
+    assert node_types == {"etcd", "master", "worker"}
 
 
 def test_destroy_cluster(mock_cluster):
@@ -45,6 +48,16 @@ def test_node_tls_data(mock_cluster):
     for node in mock_cluster.nodes:
         assert node.tls_cert.startswith("-----BEGIN CERTIFICATE-----")
         assert node.tls_key.startswith("-----BEGIN RSA PRIVATE KEY-----")
+
+
+def test_apiserver_tls_data(mock_cluster):
+    for node in mock_cluster.nodes:
+        if isinstance(node, core.MasterNode):
+            assert node.apiserver_cert.startswith("-----BEGIN CERTIFICATE-----")
+            assert node.apiserver_key.startswith("-----BEGIN RSA PRIVATE KEY-----")
+            break
+    else:
+        raise AssertionError("No master node??")
 
 
 def test_env_variables(mock_cluster):

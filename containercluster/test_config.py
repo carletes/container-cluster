@@ -25,7 +25,10 @@ def test_add_cluster(config):
                        "digitalocean", "lon1",
                        ipaddress.ip_network(u"172.16.0.0/16"), 24,
                        ipaddress.ip_network(u"172.16.1.0/24"),
-                       ipaddress.ip_network(u"172.16.254.0"))
+                       ipaddress.ip_network(u"172.16.254.0"),
+                       ipaddress.ip_network(u"172.17.0.0/16"),
+                       ipaddress.ip_address(u"172.17.0.10"),
+                       ipaddress.ip_address(u"172.17.0.1"))
     assert "test-cluster" in config.clusters
     assert config.clusters["test-cluster"]["discovery_token"]
 
@@ -37,7 +40,10 @@ def test_save(config):
                        "digitalocean", "lon1",
                        ipaddress.ip_network(u"172.16.0.0/16"), 24,
                        ipaddress.ip_network(u"172.16.1.0"),
-                       ipaddress.ip_network(u"172.16.254.0"))
+                       ipaddress.ip_network(u"172.16.254.0"),
+                       ipaddress.ip_network(u"172.17.0.0/16"),
+                       ipaddress.ip_address(u"172.17.0.10"),
+                       ipaddress.ip_address(u"172.17.0.1"))
 
     config.save()
     new_config = Config(config.home)

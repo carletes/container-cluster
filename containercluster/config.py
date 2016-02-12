@@ -32,7 +32,8 @@ class Config(object):
 
     def add_cluster(self, name, channel, n_etcd, size_etcd, n_workers,
                     size_worker, provider, location, network, subnet_length,
-                    subnet_min, subnet_max):
+                    subnet_min, subnet_max, services_ip_range, dns_service_ip,
+                    kubernetes_service_ip):
         cluster = {
             "provider": provider,
             "channel": channel,
@@ -42,6 +43,9 @@ class Config(object):
             "subnet_length": subnet_length,
             "subnet_min": subnet_min,
             "subnet_max": subnet_max,
+            "services_ip_range": services_ip_range,
+            "dns_service_ip": dns_service_ip,
+            "kubernetes_service_ip": kubernetes_service_ip,
             "nodes": [],
         }
         for i in range(n_etcd):
@@ -50,6 +54,11 @@ class Config(object):
                 "type": "etcd",
                 "size": size_etcd,
             })
+        cluster["nodes"].append({
+            "name": "%s-master" % (name,),
+            "type": "master",
+            "size": size_worker,
+        })
         for i in range(n_workers):
             cluster["nodes"].append({
                 "name": "%s-worker%d" % (name, i),

@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import tempfile
+import urlparse
 
 from libcloud.compute.types import NodeState
 
@@ -27,7 +28,7 @@ class Node(object):
     ssh_uid = "core"
     ssh_port = 22
     sudo_cmd = "sudo"
-    certs_dir = "/home/core"
+    certs_dir = "/home/core/tls"
 
     log = logging.getLogger(__name__)
 
@@ -46,14 +47,20 @@ class Node(object):
         utils.wait_for_port_open(ssh_host, self.ssh_port, check_interval=1.0)
 
         with self.ssh_session as s:
-            s.exec_command("mkdir -p %s" % (self.certs_dir,))
-            sftp = s.open_sftp()
-            sftp.put(self.config.ca_cert_path,
-                     os.path.join(self.certs_dir, "ca.pem"))
-            sftp.put(self.tls_cert_path,
-                     os.path.join(self.certs_dir, "node.pem"))
-            sftp.put(self.tls_key_path,
-                     os.path.join(self.certs_dir, "node-key.pem"))
+            s.exec_command("%s mkdir -p %s" % (self.sudo_cmd, self.certs_dir))
+            s.exec_command("%s chown -R %s %s" %
+                           (self.sudo_cmd, self.ssh_uid, self.certs_dir))
+            try:
+                sftp = s.open_sftp()
+                sftp.put(self.config.ca_cert_path,
+                         os.path.join(self.certs_dir, "ca.pem"))
+                sftp.put(self.tls_cert_path,
+                         os.path.join(self.certs_dir, "node.pem"))
+                sftp.put(self.tls_key_path,
+                         os.path.join(self.certs_dir, "node-key.pem"))
+            finally:
+                s.exec_command("%s chown -R root: %s" %
+                               (self.sudo_cmd, self.certs_dir))
 
     @property
     def state(self):
@@ -82,6 +89,7 @@ class Node(object):
     def cloud_config_vars(self):
         cluster = self.config.clusters[self.cluster.name]
         return {
+            "certs_dir": self.certs_dir,
             "node_name": self.name,
             "discovery_token": cluster["discovery_token"],
             "network_config": json.dumps(
@@ -155,7 +163,80 @@ class WorkerNode(Node):
         return vars
 
 
-NODE_TYPES = dict((cls.node_type, cls) for cls in (EtcdNode, WorkerNode))
+class MasterNode(Node):
+
+    node_type = "master"
+
+    @property
+    def cloud_config_vars(self):
+        cluster = self.config.clusters[self.cluster.name]
+        etcd_url = urlparse.urlparse(self.cluster.etcd_endpoint.split(",")[0])
+        etcd_host, etcd_port = etcd_url.netloc.split(":")
+        vars = dict(super(MasterNode, self).cloud_config_vars)
+        vars.update({
+            "cluster_name": self.cluster.name,
+            "dns_service_ip": str(cluster["dns_service_ip"]),
+            "etcd_endpoint": self.cluster.etcd_endpoint,
+            "etcd_endpoint_list": ", ".join('"%s"' % (e,) for e in self.cluster.etcd_endpoint.split(",")),
+            "etcd_endpoint_host": etcd_host,
+            "etcd_endpoint_port": etcd_port,
+            "kubernetes_version": "v1.1.2",
+            "services_ip_range": str(cluster["services_ip_range"]),
+        })
+        return vars
+
+    def provision(self, vars):
+        super(MasterNode, self).provision(vars)
+
+        with self.ssh_session as s:
+            s.exec_command("%s chown -R %s %s" %
+                           (self.sudo_cmd, self.ssh_uid, self.certs_dir))
+            try:
+                sftp = s.open_sftp()
+                sftp.put(self.apiserver_cert_path,
+                         os.path.join(self.certs_dir, "apiserver.pem"))
+                sftp.put(self.apiserver_key_path,
+                         os.path.join(self.certs_dir, "apiserver-key.pem"))
+            finally:
+                s.exec_command("%s chown -R root: %s" %
+                               (self.sudo_cmd, self.certs_dir))
+
+    @property
+    def apiserver_cert_path(self):
+        cert_fname, _ = self._ensure_apiserver_tls()
+        return cert_fname
+
+    @property
+    def apiserver_cert(self):
+        with open(self.apiserver_cert_path, "rt") as f:
+            return f.read()
+
+    @property
+    def apiserver_key_path(self):
+        _, key_fname = self._ensure_apiserver_tls()
+        return key_fname
+
+    @property
+    def apiserver_key(self):
+        with open(self.apiserver_key_path, "rt") as f:
+            return f.read()
+
+    def _ensure_apiserver_tls(self):
+        cluster = self.config.clusters[self.cluster.name]
+        alt_names = [
+            u"kubernetes",
+            u"kubernetes.default",
+            u"kubernetes.default.svc",
+            u"kubernetes.default.svc.%s.local" % (self.cluster.name,),
+            unicode(cluster["kubernetes_service_ip"]),
+        ]
+        alt_names.extend(unicode(ip) for ip in self.public_ips)
+        alt_names.extend(unicode(ip) for ip in self.private_ips)
+        return self.config.node_tls_paths(u"kube-apiserver", alt_names)
+
+
+NODE_TYPES = dict((cls.node_type, cls) for cls in
+                  (EtcdNode, MasterNode, WorkerNode))
 
 
 def make_etcd_endpoint(nodes):
@@ -343,11 +424,13 @@ LOG = logging.getLogger(__name__)
 
 def create_cluster(name, channel, n_etcd, size_etcd, n_workers, size_worker,
                    provider, location, network, subnet_length, subnet_min,
-                   subnet_max, config):
+                   subnet_max,  services_ip_range, dns_service_ip,
+                   kubernetes_service_ip, config):
     LOG.info("Creating cluster %s", name)
     config.add_cluster(name, channel, n_etcd, size_etcd,
                        n_workers, size_worker, provider, location, network,
-                       subnet_length, subnet_min, subnet_max)
+                       subnet_length, subnet_min, subnet_max, services_ip_range,
+                       dns_service_ip, kubernetes_service_ip)
     config.save()
     return Cluster(name, provider, config)
 
@@ -380,7 +463,10 @@ def ssh_session(name, provider, config):
     cluster = Cluster(name, provider, config)
     fd, path = tempfile.mkstemp()
     for node in sorted(cluster.nodes, key=lambda node: node.name):
-        os.write(fd, "screen -t %s ssh -i %s core@%s\n" %
+        os.write(fd, ("screen -t %s ssh -i %s "
+                      "-o UserKnownHostsFile=/dev/null "
+                      "-o StrictHostKeyChecking=no "
+                      "core@%s\n") %
                  (node.name, config.ssh_key_pair.private_key_path,
                   node.public_ips[0]))
     p = subprocess.Popen("screen -S %s -c %s" % (cluster.name, path),

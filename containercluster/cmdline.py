@@ -65,6 +65,18 @@ def main():
     create_p.add_argument("--flannel-subnet-max", metavar="xxx.xxx.xxx.xxx",
                           help="maximum flannel subnet (default: %(default)s)",
                           default="172.16.254.0")
+    create_p.add_argument("--services-ip-range", metavar="xxx.xxx.xxx.xxx/nn",
+                          help="subnet for Kubernetes services (default: %(default)s)",
+                          default="172.17.0.0/24")
+    create_p.add_argument("--dns-service-ip", metavar="xxx.xxx.xxx.xxx",
+                          help=("virtual IP for Kubernetes cluster DNS service "
+                                "(default: %(default)s)"),
+                          default="172.17.0.10")
+    create_p.add_argument("--kubernetes-service-ip", metavar="xxx.xxx.xxx.xxx",
+                          help=("virtual IP for Kubernetes API "
+                                "(default: %(default)s)"),
+                          default="172.17.0.1")
+
     create_p.set_defaults(func=create_cluster)
 
     provision_p = subp.add_parser("provision",
@@ -133,6 +145,9 @@ def create_cluster(args):
     subnet_max = ipaddress.ip_network(u"%s/%d" % (
         args.flannel_subnet_max, subnet_length
     ))
+    services_ip_range = ipaddress.ip_network(u"%s" % (args.services_ip_range,))
+    dns_service_ip = ipaddress.ip_address(u"%s" % (args.dns_service_ip,))
+    kubernetes_service_ip = ipaddress.ip_address(u"%s" % (args.kubernetes_service_ip,))
     for net in (subnet_min, subnet_max):
         if net.prefixlen != subnet_length:
             LOG.error("Network %s is not a /%d network", net, subnet_length)
@@ -140,12 +155,25 @@ def create_cluster(args):
         if not net.subnet_of(network):
             LOG.error("Network %s is not a subnet of %s", net, network)
             return 1
+    if services_ip_range.overlaps(network):
+        LOG.error("Service IP range %s overlaps with network %s",
+                  services_ip_range, network)
+        return 1
+    if dns_service_ip not in services_ip_range:
+        LOG.error("DNS service IP address %s not in service IP range %s",
+                  dns_service_ip, services_ip_range)
+        return 1
+    if kubernetes_service_ip not in services_ip_range:
+        LOG.error("Kubernetes API IP address %s not in service IP range %s",
+                  kubernetes_service_ip, services_ip_range)
+        return 1
 
     provider = get_provider(args.provider)
     core.create_cluster(args.name, args.channel, args.num_etcd, args.size_etcd,
                         args.num_workers, args.size_workers, provider,
                         args.location, network, subnet_length, subnet_min,
-                        subnet_max, conf)
+                        subnet_max, services_ip_range, dns_service_ip,
+                        kubernetes_service_ip, conf)
     cluster_up(args)
     return provision_cluster(args)
 
