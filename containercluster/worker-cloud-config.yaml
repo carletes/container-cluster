@@ -34,6 +34,7 @@ coreos:
           content: |
             [Service]
             ExecStartPre=/usr/bin/mkdir -p /etc/kubernetes/manifests
+            ExecStartPre=/etc/kubernetes/bin/wait-for-k8s-master
             ExecStart=
             ExecStart=/usr/bin/kubelet \
               --allow-privileged=true \
@@ -61,6 +62,20 @@ write_files:
       export ETCDCTL_CERT_FILE=%(certs_dir)s/node.pem
       export ETCDCTL_KEY_FILE=%(certs_dir)s/node-key.pem
 
+  - path: /etc/kubernetes/bin/wait-for-k8s-master
+    permissions: 0755
+    content: |
+      #!/bin/bash
+      echo "Waiting for Kubernetes master server ..."
+      until curl \
+          --cacert %(certs_dir)s/ca.pem \
+          --cert %(certs_dir)s/node.pem \
+          --key %(certs_dir)s/node-key.pem \
+            https://%(master_address)s ; do
+        sleep 5
+      done
+      echo "... Kubernetes master server up"
+
   - path: /etc/kubernetes/worker-kubeconfig.yaml
     permissions: 0644
     content: |
@@ -70,6 +85,7 @@ write_files:
         - name: local
           cluster:
             certificate-authority: %(certs_dir)s/ca.pem
+            server: %(master_address)s
       users:
         - name: kubelet
           user:
