@@ -1,6 +1,7 @@
 import os
 
 import ipaddress
+import yaml
 
 from containercluster.config import Config
 
@@ -60,3 +61,30 @@ def test_node_tls_paths(config):
 def test_admin_tls_paths(config):
     for fname in (config.admin_cert_path, config.admin_key_path):
         assert os.stat(fname).st_size
+
+
+def test_kubeconfig_structure(config):
+    with open(config.kubeconfig_path("test-cluster", "1.2.3.4")) as f:
+        kubeconfig = yaml.load(f)
+
+    current_context = kubeconfig["current-context"]
+
+    for c in kubeconfig["contexts"]:
+        if c["name"] == current_context:
+            current_cluster = c["context"]["cluster"]
+            current_user = c["context"]["user"]
+            break
+    else:
+        raise AssertionError("Missing context '%s'" % (current_context,))
+
+    for c in kubeconfig["clusters"]:
+        if c["name"] == current_cluster:
+            break
+    else:
+        raise AssertionError("Missing cluster '%s'" % (current_cluster,))
+
+    for c in kubeconfig["users"]:
+        if c["name"] == current_user:
+            break
+    else:
+        raise AssertionError("Missing user '%s'" % (current_user,))

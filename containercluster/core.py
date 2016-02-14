@@ -101,8 +101,8 @@ class Node(object):
         cluster = self.config.clusters[self.cluster.name]
         return {
             "certs_dir": self.certs_dir,
-            "node_name": self.name,
             "discovery_token": cluster["discovery_token"],
+            "kubernetes_version": "v1.1.2",
             "network_config": json.dumps(
                 {
                     "Network": str(cluster["network"]),
@@ -115,6 +115,7 @@ class Node(object):
                         "Port": 8472,
                     }
                 }),
+            "node_name": self.name,
         }
 
     @property
@@ -169,8 +170,14 @@ class WorkerNode(Node):
 
     @property
     def cloud_config_vars(self):
+        cluster = self.config.clusters[self.cluster.name]
         vars = dict(super(WorkerNode, self).cloud_config_vars)
-        vars["etcd_endpoint"] = self.cluster.etcd_endpoint
+        vars.update({
+            "cluster_name": self.cluster.name,
+            "dns_service_ip": str(cluster["dns_service_ip"]),
+            "etcd_endpoint": self.cluster.etcd_endpoint,
+            "master_address": self.cluster.master_ip,
+        })
         return vars
 
 
@@ -191,7 +198,6 @@ class MasterNode(Node):
             "etcd_endpoint_list": ", ".join('"%s"' % (e,) for e in self.cluster.etcd_endpoint.split(",")),
             "etcd_endpoint_host": etcd_host,
             "etcd_endpoint_port": etcd_port,
-            "kubernetes_version": "v1.1.2",
             "services_ip_range": str(cluster["services_ip_range"]),
         })
         return vars
@@ -259,6 +265,13 @@ def make_etcd_endpoint(nodes):
     return ",".join("https://%s:2379" % (n.public_ips[0],) for n in nodes)
 
 
+def make_master_ip(nodes):
+    for n in nodes:
+        if isinstance(n, MasterNode):
+            return n.public_ips[0]
+    raise Exception("No master node in %s" % (nodes,))
+
+
 class Cluster(object):
 
     log = logging.getLogger(__name__)
@@ -269,13 +282,28 @@ class Cluster(object):
         self.config = config
         self._nodes = []
         self._node_names = None
+        self._master_ip = None
         self._etcd_endpoint = None
 
     @property
     def nodes(self):
         if not self._nodes:
             self.log.info("Creating nodes for cluster '%s'", self.name)
+            etcd_nodes = []
+            master_node = None
+            worker_nodes = []
             nodes_data = self.config.clusters[self.name]["nodes"]
+            for n in nodes_data:
+                node_type = n["type"]
+                if node_type == "etcd":
+                    etcd_nodes.append(n)
+                elif node_type == "master":
+                    master_node = n
+                elif node_type == "worker":
+                    worker_nodes.append(n)
+                else:
+                    raise TypeError("Invalid node type '%s' for node %s" %
+                                    (node_type, n))
 
             # Start first the `etcd` nodes, since the etcd endpoint is needed in
             # all other nodes, and it will not be known until the `etcd` nodes
@@ -286,19 +314,29 @@ class Cluster(object):
                                           n["size"],
                                           self,
                                           self.config)
-                                         for n in nodes_data
-                                         if n["type"] == "etcd")
+                                         for n in etcd_nodes)
             self._etcd_endpoint = make_etcd_endpoint(self._nodes)
 
-            # Start now all non-etcd nodes.
+            # Start now the master node, since its address is needed in all
+            # worker nodes, and it will not be known until the master node is
+            # up.
+            n = master_node
+            self._nodes.append(self.provider.ensure_node(n["name"],
+                                                         MasterNode,
+                                                         n["size"],
+                                                         self,
+                                                         self.config))
+            self._master_ip = make_master_ip(self._nodes)
+
+            # Start now all worker nodes.
             self._nodes.extend(utils.parallel((self.provider.ensure_node,
                                                n["name"],
                                                NODE_TYPES[n["type"]],
                                                n["size"],
                                                self,
                                                self.config)
-                                              for n in nodes_data
-                                              if n["type"] != "etcd"))
+                                              for n in worker_nodes))
+
         return self._nodes
 
     @property
@@ -331,6 +369,12 @@ class Cluster(object):
         return self._node_names
 
     def destroy_nodes(self):
+        kubeconfig_path = self.kubeconfig_path
+        self.log.debug("Removing %s", kubeconfig_path)
+        try:
+            os.unlink(kubeconfig_path)
+        except OSError as exc:
+            self.log.warn("Cannot remove %s: %s", kubeconfig_path, str(exc))
         for n in self.exisiting_nodes:
             self.log.debug("Destroying node '%s'", n.name)
             n.destroy()
@@ -362,7 +406,7 @@ class Cluster(object):
                 raise Exception("Node '%s' cannot be restarted" % (node.name,))
 
             self.log.info("Rebooting node '%s'", node.name)
-            self.provider.reboot_node(node.driver_obj)
+            self.provider.reboot_node(node)
 
         utils.parallel((restart_if_needed, node) for node in self.nodes)
         self.log.info("%s: Waiting for nodes ...", self.name)
@@ -383,12 +427,23 @@ class Cluster(object):
         return self._etcd_endpoint
 
     @property
+    def master_ip(self):
+        if self._master_ip is None:
+            self._master_ip = make_master_ip(self.nodes)
+        return self._master_ip
+
+    @property
+    def kubeconfig_path(self):
+        return self.config.kubeconfig_path(self.name, self.master_ip)
+
+    @property
     def env_variables(self):
         return (
             ("ETCDCTL_CA_FILE", self.config.ca_cert_path),
             ("ETCDCTL_CERT_FILE", self.config.admin_cert_path),
             ("ETCDCTL_KEY_FILE", self.config.admin_key_path),
             ("ETCDCTL_ENDPOINT", self.etcd_endpoint),
+            ("KUBECONFIG", self.kubeconfig_path),
         )
 
 

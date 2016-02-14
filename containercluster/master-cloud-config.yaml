@@ -84,15 +84,15 @@ write_files:
               - --advertise-address=$public_ipv4
               - --allow-privileged=true
               - --bind-address=0.0.0.0
-              - --client-ca-file=/etc/kubernetes/ssl/ca.pem
+              - --client-ca-file=%(certs_dir)s/ca.pem
               - --etcd-servers=http://127.0.0.1:2379
               - --insecure-bind-address=127.0.0.1
               - --insecure-port=8080
               - --secure-port=443
               - --service-cluster-ip-range=%(services_ip_range)s
-              - --service-account-key-file=/etc/kubernetes/ssl/apiserver-key.pem
-              - --tls-cert-file=/etc/kubernetes/ssl/apiserver.pem
-              - --tls-private-key-file=/etc/kubernetes/ssl/apiserver-key.pem
+              - --service-account-key-file=%(certs_dir)s/apiserver-key.pem
+              - --tls-cert-file=%(certs_dir)s/apiserver.pem
+              - --tls-private-key-file=%(certs_dir)s/apiserver-key.pem
               - --v=2
             ports:
               - containerPort: 443
@@ -102,7 +102,7 @@ write_files:
                 hostPort: 8080
                 name: local
             volumeMounts:
-              - mountPath: /etc/kubernetes/ssl
+              - mountPath: %(certs_dir)s
                 name: ssl-certs-kubernetes
                 readOnly: true
               - mountPath: /etc/ssl/certs
@@ -132,8 +132,8 @@ write_files:
               - /hyperkube
               - controller-manager
               - --master=http://127.0.0.1:8080
-              - --root-ca-file=/etc/kubernetes/ssl/ca.pem
-              - --service-account-private-key-file=/etc/kubernetes/ssl/apiserver-key.pem
+              - --root-ca-file=%(certs_dir)s/ca.pem
+              - --service-account-private-key-file=%(certs_dir)s/apiserver-key.pem
               - --v=2
             livenessProbe:
               httpGet:
@@ -143,7 +143,7 @@ write_files:
               initialDelaySeconds: 15
               timeoutSeconds: 1
             volumeMounts:
-              - mountPath: /etc/kubernetes/ssl
+              - mountPath: %(certs_dir)s
                 name: ssl-certs-kubernetes
                 readOnly: true
               - mountPath: /etc/ssl/certs
@@ -457,11 +457,11 @@ write_files:
               - --remote-port=%(etcd_endpoint_port)s
               - --local-host=127.0.0.1
               - --local-port=2379
-              - --cert-file=/etc/kubernetes/ssl/node.pem
-              - --key-file=/etc/kubernetes/ssl/node-key.pem
-              - --ca-file=/etc/kubernetes/ssl/ca.pem
+              - --cert-file=%(certs_dir)s/node.pem
+              - --key-file=%(certs_dir)s/node-key.pem
+              - --ca-file=%(certs_dir)s/ca.pem
             volumeMounts:
-              - mountPath: /etc/kubernetes/ssl
+              - mountPath: %(certs_dir)s
                 name: ssl-certs-kubernetes
                 readOnly: true
               - mountPath: /etc/ssl/certs

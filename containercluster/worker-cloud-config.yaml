@@ -8,7 +8,15 @@ coreos:
     etcd_cafile: %(certs_dir)s/ca.pem
     iface: $public_ipv4
   units:
+    - name: docker.service
+      drop-ins:
+        - name: 40-flannel.conf
+          content: |
+            [Unit]
+            Requires=flanneld.service
+            After=flanneld.service
     - name: flanneld.service
+      command: start
       drop-ins:
         - name: 50-network-config.conf
           content: |
@@ -19,7 +27,30 @@ coreos:
             Environment=ETCDCTL_CERT_FILE=%(certs_dir)s/node.pem
             Environment=ETCDCTL_KEY_FILE=%(certs_dir)s/node-key.pem
             ExecStartPre=/usr/bin/etcdctl set /coreos.com/network/config '%(network_config)s'
+    - name: kubelet.service
       command: start
+      drop-ins:
+        - name: 10-kubelet-options.conf
+          content: |
+            [Service]
+            ExecStartPre=/usr/bin/mkdir -p /etc/kubernetes/manifests
+            ExecStart=
+            ExecStart=/usr/bin/kubelet \
+              --allow-privileged=true \
+              --api-servers=https://%(master_address)s \
+              --cluster-domain=%(cluster_name)s.local \
+              --cluster-dns=%(dns_service_ip)s \
+              --config=/etc/kubernetes/manifests \
+              --hostname-override=$public_ipv4 \
+              --kubeconfig=/etc/kubernetes/worker-kubeconfig.yaml \
+              --register-node=true \
+              --tls-cert-file=%(certs_dir)s/node.pem \
+              --tls-private-key-file=%(certs_dir)s/node-key.pem \
+              --v=2
+            Restart=always
+            RestartSec=10
+            [Install]
+            WantedBy=multi-user.target
 
 write_files:
   - path: /etc/profile.d/10-etcdctl.sh
@@ -29,3 +60,66 @@ write_files:
       export ETCDCTL_CA_FILE=%(certs_dir)s/ca.pem
       export ETCDCTL_CERT_FILE=%(certs_dir)s/node.pem
       export ETCDCTL_KEY_FILE=%(certs_dir)s/node-key.pem
+
+  - path: /etc/kubernetes/worker-kubeconfig.yaml
+    permissions: 0644
+    content: |
+      apiVersion: v1
+      kind: Config
+      clusters:
+        - name: local
+          cluster:
+            certificate-authority: %(certs_dir)s/ca.pem
+      users:
+        - name: kubelet
+          user:
+            client-certificate: %(certs_dir)s/node.pem
+            client-key: %(certs_dir)s/node-key.pem
+      contexts:
+        - name: kubelet-context
+          context:
+            cluster: local
+            user: kubelet
+      current-context: kubelet-context
+
+  - path: /etc/kubernetes/manifests/kube-proxy.yaml
+    permissions: 0644
+    content: |
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: kube-proxy
+        namespace: kube-system
+      spec:
+        hostNetwork: true
+        containers:
+          - name: kube-proxy
+            image: gcr.io/google_containers/hyperkube:%(kubernetes_version)s
+            command:
+              - /hyperkube
+              - proxy
+              - --master=https://%(master_address)s
+              - --kubeconfig=/etc/kubernetes/worker-kubeconfig.yaml
+              - --proxy-mode=iptables
+              - --v=2
+            securityContext:
+              privileged: true
+            volumeMounts:
+              - mountPath: /etc/ssl/certs
+                name: "ssl-certs"
+              - mountPath: /etc/kubernetes/worker-kubeconfig.yaml
+                name: "kubeconfig"
+                readOnly: true
+              - mountPath: %(certs_dir)s
+                name: "etc-kube-ssl"
+                readOnly: true
+        volumes:
+          - name: "ssl-certs"
+            hostPath:
+              path: "/usr/share/ca-certificates"
+          - name: "kubeconfig"
+            hostPath:
+              path: "/etc/kubernetes/worker-kubeconfig.yaml"
+          - name: "etc-kube-ssl"
+            hostPath:
+              path: "%(certs_dir)s"

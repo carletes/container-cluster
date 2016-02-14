@@ -36,6 +36,8 @@ def test_create_cluster(mock_cluster):
 def test_destroy_cluster(mock_cluster):
     tls_paths = list(chain(*(n.tls_paths for n in mock_cluster.nodes)))
     assert tls_paths
+    for fname in tls_paths:
+        assert os.access(fname, os.F_OK)
 
     for fname in tls_paths:
         assert os.access(fname, os.F_OK)
@@ -90,6 +92,10 @@ def test_cloud_config_data(mock_cluster):
         assert node.cloud_config_data.startswith("#cloud-config\n")
         cloud_config = yaml.load(node.cloud_config_data)
         assert "coreos" in cloud_config
+
+
+def test_master_ip(mock_cluster):
+    assert mock_cluster.master_ip == "127.0.0.1"
 
 
 def ssh_private_key_path():

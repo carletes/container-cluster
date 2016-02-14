@@ -153,6 +153,44 @@ class Config(object):
                 os.makedirs(dname)
             return dname
 
+    def kubeconfig_path(self, cluster_name, master_ip):
+        kubeconfig = {
+            "apiVersion": "v1",
+            "kind": "Config",
+            "clusters": [
+                {
+                    "name": cluster_name,
+                    "cluster": {
+                        "certificate-authority": self.ca_cert_path,
+                        "server": "https://%s" % (master_ip,)
+                    }
+                },
+            ],
+            "users": [
+                {
+                    "name": "admin",
+                    "user": {
+                        "client-certificate": self.admin_cert_path,
+                        "client-key": self.admin_key_path,
+                    },
+                },
+            ],
+            "contexts": [
+                {
+                    "name": cluster_name,
+                    "context": {
+                        "cluster": cluster_name,
+                        "user": "admin",
+                    }
+                },
+            ],
+            "current-context": cluster_name,
+        }
+        fname = os.path.join(self.config_dir, "kubeconfig-%s" % (cluster_name,))
+        with open(fname, "wt") as f:
+            yaml.dump(kubeconfig, f)
+        return fname
+
 
 class SSHKeyPair(object):
 
