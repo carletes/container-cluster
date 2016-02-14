@@ -68,6 +68,7 @@ write_files:
       #!/bin/bash
       echo "Waiting for Kubernetes master server ..."
       until curl \
+          --silent \
           --cacert %(certs_dir)s/ca.pem \
           --cert %(certs_dir)s/node.pem \
           --key %(certs_dir)s/node-key.pem \
