@@ -23,7 +23,7 @@ def test_valid_instance_size(provider):
 def test_invalid_instance_size(provider):
     with pytest.raises(ValueError) as exc:
         provider.get_size("unknown-size")
-    assert exc.value.message.startswith("Unsupported size")
+    assert str(exc.value).startswith("Unsupported size")
 
 
 def test_valid_image(provider):
@@ -33,8 +33,8 @@ def test_valid_image(provider):
 def test_invalid_image(provider):
     with pytest.raises(Exception) as exc:
         provider.get_image("unknown-channel")
-    assert exc.value.message == ("Cannot find CoreOS image for channel "
-                                 "'unknown-channel'")
+    assert str(exc.value) == ("Cannot find CoreOS image for channel "
+                              "'unknown-channel'")
 
 
 def test_valid_location(provider):
@@ -44,4 +44,4 @@ def test_valid_location(provider):
 def test_invalid_location(provider):
     with pytest.raises(ValueError) as exc:
         provider.get_location("unknown-location")
-    assert exc.value.message.startswith("Unsupported location")
+    assert str(exc.value).startswith("Unsupported location")

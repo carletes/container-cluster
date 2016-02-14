@@ -69,7 +69,7 @@ class CA(object):
                 b = b.public_key(public_key)
                 b = b.subject_name(x509.Name([
                     x509.NameAttribute(NameOID.ORGANIZATION_NAME, u"Container cluster"),
-                    x509.NameAttribute(NameOID.COMMON_NAME, unicode(host_name))
+                    x509.NameAttribute(NameOID.COMMON_NAME, u"%s" % (host_name,))
                 ]))
                 b = b.add_extension(
                     x509.BasicConstraints(ca=False,

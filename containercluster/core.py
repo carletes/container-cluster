@@ -3,7 +3,11 @@ import json
 import os
 import subprocess
 import tempfile
-import urlparse
+
+try:
+    from urlparse import urlparse
+except ImportError:
+    from urllib.parse import urlparse
 
 from libcloud.compute.types import NodeState
 
@@ -154,9 +158,9 @@ class Node(object):
 
     def _ensure_tls(self):
         alt_names = [u"127.0.0.1"]
-        alt_names.extend(unicode(ip) for ip in self.public_ips)
-        alt_names.extend(unicode(ip) for ip in self.private_ips)
-        return self.config.node_tls_paths(unicode(self.name), alt_names)
+        alt_names.extend(u"%s" % (ip,) for ip in self.public_ips)
+        alt_names.extend(u"%s" % (ip,)for ip in self.private_ips)
+        return self.config.node_tls_paths(self.name, alt_names)
 
 
 class EtcdNode(Node):
@@ -188,7 +192,7 @@ class MasterNode(Node):
     @property
     def cloud_config_vars(self):
         cluster = self.config.clusters[self.cluster.name]
-        etcd_url = urlparse.urlparse(self.cluster.etcd_endpoint.split(",")[0])
+        etcd_url = urlparse(self.cluster.etcd_endpoint.split(",")[0])
         etcd_host, etcd_port = etcd_url.netloc.split(":")
         vars = dict(super(MasterNode, self).cloud_config_vars)
         vars.update({
@@ -250,10 +254,10 @@ class MasterNode(Node):
             u"kubernetes.default",
             u"kubernetes.default.svc",
             u"kubernetes.default.svc.%s.local" % (self.cluster.name,),
-            unicode(cluster["kubernetes_service_ip"]),
+            u"%s" % (cluster["kubernetes_service_ip"],),
         ]
-        alt_names.extend(unicode(ip) for ip in self.public_ips)
-        alt_names.extend(unicode(ip) for ip in self.private_ips)
+        alt_names.extend(u"%s" % (ip,) for ip in self.public_ips)
+        alt_names.extend(u"%s" % (ip,) for ip in self.private_ips)
         return self.config.node_tls_paths(u"kube-apiserver", alt_names)
 
 
