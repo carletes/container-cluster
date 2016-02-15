@@ -1,16 +1,12 @@
-import codecs
 import json
 import os
 import platform
 import pwd
-import tempfile
 
 from itertools import chain
 
-import mockssh
 import yaml
 
-import pytest
 
 from containercluster import core
 
@@ -96,41 +92,3 @@ def test_cloud_config_data(mock_cluster):
 
 def test_master_ip(mock_cluster):
     assert mock_cluster.master_ip == "127.0.0.1"
-
-
-def ssh_private_key_path():
-    ssh_dir = os.path.expanduser("~/.ssh")
-    for fname in ("id_rsa",):
-        fname = os.path.join(ssh_dir, fname)
-        if os.access(fname, os.F_OK):
-            return fname
-
-
-needs_ssh_private_key = pytest.mark.skipif(ssh_private_key_path() is None,
-                                           reason="Missing SSH private key")
-
-
-@pytest.yield_fixture(scope="function")
-def ssh_session():
-    uid = pwd.getpwuid(os.geteuid()).pw_name
-    private_key_path = ssh_private_key_path()
-    with mockssh.Server({uid: private_key_path}) as s:
-        with core.SshSession(uid, s.host, s.port, private_key_path) as session:
-            yield session
-
-
-@needs_ssh_private_key
-def test_ssh_session(ssh_session):
-    _, stdout, _ = ssh_session.exec_command("ls /")
-    assert "etc" in (codecs.decode(bit, "utf8")
-                     for bit in stdout.read().split())
-
-
-@needs_ssh_private_key
-def test_sftp_session(ssh_session):
-    target_dir = tempfile.mkdtemp()
-    target_fname = os.path.join(target_dir, "foo")
-    assert not os.access(target_fname, os.F_OK)
-
-    ssh_session.open_sftp().put(__file__, target_fname)
-    assert os.access(target_fname, os.F_OK)

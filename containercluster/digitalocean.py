@@ -38,12 +38,12 @@ class DigitalOceanProvider(providers.Provider):
                                            "ssh_keys": [ssh_key_id],
                                        },
                                        ex_user_data=cloud_config_data)
-        self.log.info("Node %s created", name)
+        self.log.debug("Node %s created", name)
         return node
 
     def reboot_node(self, node):
         if node.state == NodeState.STOPPED:
-            self.log.info("Powering on node '%s'", node.name)
+            self.log.debug("Powering on node '%s'", node.name)
             self.driver.ex_power_on_node(node)
         else:
             return super(DigitalOceanProvider, self).reboot_node(node)

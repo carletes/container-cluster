@@ -1,5 +1,6 @@
 import argparse
 import logging
+import logging.config
 import sys
 
 import ipaddress
@@ -107,25 +108,19 @@ def main():
     args = p.parse_args()
 
     if args.quiet:
-        log_level = logging.WARN
-        log_format = "%(message)s"
+        log_level = "quiet"
     elif args.debug:
-        log_level = logging.DEBUG
-        log_format = "%(asctime)s %(threadName)s %(name)s %(message)s"
+        log_level = "debug"
     else:
-        log_level = logging.INFO
-        log_format = "%(message)s"
-    logging.basicConfig(level=log_level, stream=sys.stderr, format=log_format)
+        log_level = "normal"
+    configure_logging(log_level)
 
     try:
         return args.func(args)
     except Exception as exc:
-        LOG.exception("Command `%s` failed: %s",
-                      " ".join(sys.argv), exc.message)
+        logging.exception("Command `%s` failed: %s",
+                          " ".join(sys.argv), exc.message)
         return 1
-
-
-LOG = logging.getLogger("containercluster")
 
 
 def create_cluster(args):
@@ -134,7 +129,7 @@ def create_cluster(args):
     """
     conf = config.Config()
     if args.name in conf.clusters:
-        LOG.error("Cluster `%s` already exists", args.name)
+        logging.error("Cluster `%s` already exists", args.name)
         return 1
 
     network = ipaddress.ip_network(u"%s" % (args.flannel_network,))
@@ -150,22 +145,22 @@ def create_cluster(args):
     kubernetes_service_ip = ipaddress.ip_address(u"%s" % (args.kubernetes_service_ip,))
     for net in (subnet_min, subnet_max):
         if net.prefixlen != subnet_length:
-            LOG.error("Network %s is not a /%d network", net, subnet_length)
+            logging.error("Network %s is not a /%d network", net, subnet_length)
             return 1
         if not net.subnet_of(network):
-            LOG.error("Network %s is not a subnet of %s", net, network)
+            logging.error("Network %s is not a subnet of %s", net, network)
             return 1
     if services_ip_range.overlaps(network):
-        LOG.error("Service IP range %s overlaps with network %s",
-                  services_ip_range, network)
+        logging.error("Service IP range %s overlaps with network %s",
+                      services_ip_range, network)
         return 1
     if dns_service_ip not in services_ip_range:
-        LOG.error("DNS service IP address %s not in service IP range %s",
-                  dns_service_ip, services_ip_range)
+        logging.error("DNS service IP address %s not in service IP range %s",
+                      dns_service_ip, services_ip_range)
         return 1
     if kubernetes_service_ip not in services_ip_range:
-        LOG.error("Kubernetes API IP address %s not in service IP range %s",
-                  kubernetes_service_ip, services_ip_range)
+        logging.error("Kubernetes API IP address %s not in service IP range %s",
+                      kubernetes_service_ip, services_ip_range)
         return 1
 
     provider = get_provider(args.provider)
@@ -184,7 +179,7 @@ def provision_cluster(args):
     """
     conf = config.Config()
     if args.name not in conf.clusters:
-        LOG.error("Unknown cluster '%s'", args.name)
+        logging.error("Unknown cluster '%s'", args.name)
         return 1
     provider = conf.clusters[args.name]["provider"]
     return core.provision_cluster(args.name, provider, conf)
@@ -196,7 +191,7 @@ def destroy_cluster(args):
     """
     conf = config.Config()
     if args.name not in conf.clusters:
-        LOG.error("Unknown cluster '%s'", args.name)
+        logging.error("Unknown cluster '%s'", args.name)
         return 1
     provider = conf.clusters[args.name]["provider"]
     return core.destroy_cluster(args.name, provider, conf)
@@ -208,7 +203,7 @@ def cluster_up(args):
     """
     conf = config.Config()
     if args.name not in conf.clusters:
-        LOG.error("Unknown cluster '%s'", args.name)
+        logging.error("Unknown cluster '%s'", args.name)
         return 1
     provider = conf.clusters[args.name]["provider"]
     return core.start_cluster(args.name, provider, conf)
@@ -226,7 +221,7 @@ def cluster_env(args):
     """
     conf = config.Config()
     if args.name not in conf.clusters:
-        LOG.error("Unknown cluster '%s'", args.name)
+        logging.error("Unknown cluster '%s'", args.name)
         return 1
     provider = conf.clusters[args.name]["provider"]
     for k, v in core.cluster_env(args.name, provider, conf):
@@ -239,10 +234,72 @@ def ssh(args):
     """
     conf = config.Config()
     if args.name not in conf.clusters:
-        LOG.error("Unknown cluster '%s'", args.name)
+        logging.error("Unknown cluster '%s'", args.name)
         return 1
     provider = conf.clusters[args.name]["provider"]
     return core.ssh_session(args.name, provider, conf)
+
+
+def configure_logging(level):
+    config = {
+        "version": 1,
+        "formatters": {
+            "brief": {
+                "format": "%(message)s"
+            },
+            "detailed": {
+                "format": "%(asctime)s %(threadName)s %(name)s %(message)s"
+            },
+        },
+        "handlers": {
+            "console": {
+                "class": "logging.StreamHandler",
+                "stream": "ext://sys.stderr",
+                "level": None,
+                "formatter": None,
+            },
+        },
+        "loggers": {
+            "containercluster": {
+                "level": None,
+                "handlers": ["console"],
+                "propagate": False,
+            },
+            "paramiko": {
+                "level": None,
+                "handlers": ["console"],
+                "propagate": False,
+            },
+        },
+        "root": {
+            "handlers": ["console"],
+            "level": None,
+        }
+    }
+
+    if level == "debug":
+        config["handlers"]["console"]["level"] = logging.DEBUG
+        config["handlers"]["console"]["formatter"] = "detailed"
+        config["loggers"]["containercluster"]["level"] = logging.DEBUG
+        config["loggers"]["paramiko"]["level"] = logging.DEBUG
+        config["root"]["level"] = logging.DEBUG
+    elif level == "normal":
+        config["handlers"]["console"]["level"] = logging.INFO
+        config["handlers"]["console"]["formatter"] = "brief"
+        config["loggers"]["containercluster"]["level"] = logging.INFO
+        config["loggers"]["paramiko"]["level"] = logging.WARN
+        config["root"]["level"] = logging.INFO
+    elif level == "quiet":
+        config["handlers"]["console"]["level"] = logging.WARN
+        config["handlers"]["console"]["formatter"] = "brief"
+        config["loggers"]["containercluster"]["level"] = logging.WARN
+        config["loggers"]["paramiko"]["level"] = logging.WARN
+        config["root"]["level"] = logging.WARN
+    else:
+        raise ValueError("Invalid logging level '%s'" % (level,))
+
+    logging.captureWarnings(True)
+    logging.config.dictConfig(config)
 
 
 if __name__ == "__main__":

@@ -5,9 +5,12 @@ import sys
 import threading
 import time
 
+from paramiko.client import MissingHostKeyPolicy, SSHClient
+
 
 __all__ = [
     "MultipleError",
+    "SshSession",
     "parallel",
     "run",
     "wait_for_port_open",
@@ -92,3 +95,42 @@ def wait_for_port_open(host, port, timeout=None, check_interval=0.1):
             return
         finally:
             sock.close()
+
+
+class IgnoreMissingKeyPolicy(MissingHostKeyPolicy):
+
+    def missing_host_key(self, *args):
+        pass
+
+
+class SshSession(object):
+
+    log = logging.getLogger(__name__)
+
+    def __init__(self, uid, addr, port, private_key_path):
+        self.uid = uid
+        self.addr = addr
+        self.port = port
+        self.private_key_path = private_key_path
+        self.ssh_client = c = SSHClient()
+        c.set_missing_host_key_policy(IgnoreMissingKeyPolicy())
+
+    def __enter__(self):
+        self.log.debug("Creating SSH connection to %s@%s (port %d) ...",
+                       self.uid, self.addr, self.port)
+        self.ssh_client.connect(hostname=self.addr,
+                                port=self.port,
+                                username=self.uid,
+                                key_filename=self.private_key_path,
+                                allow_agent=False,
+                                look_for_keys=False)
+        self.log.debug("... connected to %s@%s", self.uid, self.addr)
+        return self.ssh_client
+
+    def __exit__(self, *exc_info):
+        try:
+            self.log.debug("Closing connection to %s@%s ...",
+                           self.uid, self.addr)
+            self.ssh_client.close()
+        except:
+            pass

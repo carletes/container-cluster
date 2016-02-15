@@ -53,13 +53,13 @@ class Provider(object):
         cluster_config = config.clusters[cluster.name]
         channel = cluster_config["channel"]
         location = cluster_config["location"]
-        self.log.info("Creating node %s (%s, %s, %s, %s)", name, node_class,
-                      size, channel, location)
+        self.log.debug("Creating node %s (%s, %s, %s, %s)", name, node_class,
+                       size, channel, location)
         node = node_class(name, self, cluster, config)
 
         for n in self.driver.list_nodes():
             if n.name == name:
-                self.log.info("Node '%s' already created", name)
+                self.log.debug("Node '%s' already created", name)
                 self.register_node(name, n)
                 break
         else:
@@ -90,19 +90,17 @@ class Provider(object):
     def register_node(self, name, node_driver_obj):
         self._node_objs[name] = node_driver_obj
 
-    def provision_node(self, node, vars):
-        self.log.debug("provision_node(): Calling node.provision()")
-        return node.provision(vars)
+    def provision_node(self, node):
+        return node.provision()
 
     def reboot_node(self, node):
-        self.log.info("Rebooting node '%s'", node.name)
+        self.log.debug("Rebooting node '%s'", node.name)
         self._node_objs[node.name].reboot()
 
     def list_nodes(self):
         return self.driver.list_nodes()
 
     def wait_until_running(self, *nodes):
-        self.log.debug("Waiting for nodes: %s", nodes)
         res = self.driver.wait_until_running(self._node_objs[n.name]
                                              for n in nodes)
         for node, _ in res:

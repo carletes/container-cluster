@@ -75,7 +75,7 @@ class Config(object):
 
     def save(self):
         fname = self.clusters_yaml_path
-        self.log.info("Saving clusters definitions to %s", fname)
+        self.log.debug("Saving clusters definitions to %s", fname)
         clusters = dict(self._clusters)
         for c in clusters.values():
             c = dict(c)
@@ -92,7 +92,7 @@ class Config(object):
         if not self._clusters:
             fname = self.clusters_yaml_path
             if os.access(fname, os.F_OK):
-                self.log.info("Loading clusters definitions from %s", fname)
+                self.log.debug("Loading clusters definitions from %s", fname)
                 with open(fname, "rt") as f:
                     self._clusters = yaml.load(f)
                 for c in self._clusters.values():
@@ -149,7 +149,7 @@ class Config(object):
     def _ensure_dir(self, dname):
         with self.dir_lock:
             if not os.access(dname, os.F_OK):
-                self.log.info("Creating directory %s", dname)
+                self.log.debug("Creating directory %s", dname)
                 os.makedirs(dname)
             return dname
 
@@ -225,7 +225,7 @@ class SSHKeyPair(object):
         fname = self._key_file_name
         with self.ssh_keygen_lock:
             if not os.access(fname, os.R_OK):
-                self.log.info("Generating SSH key pair %s", fname)
+                self.log.debug("Generating SSH key pair %s", fname)
                 utils.run("ssh-keygen -f %s -N ''" % (fname,))
         return fname
 
