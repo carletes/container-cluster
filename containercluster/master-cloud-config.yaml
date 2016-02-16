@@ -493,7 +493,7 @@ write_files:
             "spec": {
               "containers": [
                 {
-                  "image": "gcr.io/google_containers/heapster:v0.20.0-alpha6",
+                  "image": "gcr.io/google_containers/heapster:v0.18.5",
                   "name": "heapster",
                   "resources": {
                     "limits": {
@@ -503,25 +503,29 @@ write_files:
                   },
                   "command": [
                     "/heapster",
+                    "--alsologtostderr",
                     "--source=kubernetes:''",
                     "--sink=influxdb:http://monitoring-influxdb:8086",
-                    "--metric_resolution=60s"
-                  ]
-                },
-                {
-                  "image": "gcr.io/google_containers/heapster:v0.20.0-alpha6",
-                  "name": "eventer",
-                  "resources": {
-                    "limits": {
-                      "cpu": "100m",
-                      "memory": "200Mi"
+                    "--tls_cert=%(certs_dir)s/node.pem",
+                    "--tls_key=%(certs_dir)s/node-key.pem",
+                    "--tls_client_ca=%(certs_dir)s/ca.pem",
+                    "--v=4"
+                  ],
+                  "volumeMounts": [
+                    {
+                      "mountPath": "%(certs_dir)s",
+                      "name": "tls-data",
+                      "readOnly": true
                     }
-                  },
-                  "command": [
-                    "/eventer",
-                    "--source=kubernetes:''",
-                    "--sink=influxdb:http://monitoring-influxdb:8086"
                   ]
+                }
+              ],
+              "volumes": [
+                {
+                  "name": "tls-data"
+                  "hostPath": {
+                    "path": "%(certs_dir)s"
+                  }
                 }
               ]
             }
