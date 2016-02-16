@@ -67,6 +67,12 @@ coreos:
             ExecStartPost=/etc/kubernetes/bin/kube-post \
               /srv/kubernetes/manifests/influxdb-svc.json \
               http://127.0.0.1:8080/api/v1/namespaces/kube-system/services
+            ExecStartPost=/etc/kubernetes/bin/kube-post \
+              /srv/kubernetes/manifests/kubedash-rc.json \
+              http://127.0.0.1:8080/api/v1/namespaces/kube-system/replicationcontrollers
+            ExecStartPost=/etc/kubernetes/bin/kube-post \
+              /srv/kubernetes/manifests/kubedash-svc.json \
+              http://127.0.0.1:8080/api/v1/namespaces/kube-system/services
 
 write_files:
   - path: /etc/kubernetes/bin/kube-post
@@ -734,6 +740,98 @@ write_files:
           ],
           "selector": {
             "k8s-app": "influxGrafana"
+          }
+        }
+      }
+
+  # Kubedash (uses Heapster above)
+
+  - path: /srv/kubernetes/manifests/kubedash-rc.json
+    content: |
+      {
+        "apiVersion": "v1",
+        "kind": "ReplicationController",
+        "metadata": {
+          "name": "kubedash",
+          "labels": {
+            "name": "kubedash",
+            "kubernetes.io/cluster-service": "true",
+            "kubernetes.io/name": "Kubedash"
+          },
+          "namespace": "kube-system"
+        },
+        "spec": {
+          "replicas": 1,
+          "selector": {
+            "name": "kubedash"
+          },
+          "template": {
+            "metadata": {
+              "labels": {
+                "name": "kubedash",
+                "kubernetes.io/cluster-service": "true"
+              }
+            },
+            "spec": {
+              "containers": [
+                {
+                  "image": "gcr.io/google_containers/kubedash:v0.2.1",
+                  "name": "kubedash",
+                  "command": [
+                    "/kubedash",
+                    "--v=4"
+                  ],
+                  "resources": {
+                    "limits": {
+                      "cpu": "50m",
+                      "memory": "100Mi"
+                    }
+                  },
+                  "volumeMounts": [
+                    {
+                      "name": "ssl-certs",
+                      "mountPath": "/etc/ssl/certs",
+                      "readOnly": true
+                    }
+                  ]
+                }
+              ],
+              "volumes": [
+                {
+                  "name": "ssl-certs",
+                  "hostPath": {
+                    "path": "/etc/ssl/certs"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+
+  - path: /srv/kubernetes/manifests/kubedash-svc.json
+    content: |
+      {
+        "apiVersion": "v1",
+        "kind": "Service",
+        "metadata": {
+          "labels": {
+            "name": "kubedash",
+            "kubernetes.io/cluster-service": "true"
+          },
+          "name": "kubedash",
+          "namespace": "kube-system"
+        },
+        "spec": {
+          "type": "LoadBalancer",
+          "ports": [
+            {
+              "port": 80,
+              "targetPort": 8289
+            }
+          ],
+          "selector": {
+            "name": "kubedash"
           }
         }
       }
